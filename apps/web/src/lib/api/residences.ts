@@ -140,6 +140,16 @@ export async function updateResidence(
   if (error) throw normalizeError(error, 'Mise à jour impossible');
 }
 
+export async function submitResidenceForReview(id: string): Promise<void> {
+  const { error } = await supabase.rpc('submit_residence_for_review', { p_residence_id: id });
+  if (error) throw normalizeError(error, 'Soumission impossible');
+}
+
+export async function withdrawResidencePublication(id: string): Promise<void> {
+  const { error } = await supabase.rpc('withdraw_residence_publication', { p_residence_id: id });
+  if (error) throw normalizeError(error, 'Retrait impossible');
+}
+
 export async function incrementResidenceViews(id: string): Promise<void> {
   await supabase.rpc('increment_residence_views', { p_id: id });
 }
