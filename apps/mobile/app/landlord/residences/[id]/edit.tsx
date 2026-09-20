@@ -28,7 +28,8 @@ export default function EditResidenceScreen() {
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
-  const [isVisible, setIsVisible] = useState(true);
+  const [moderationStatus, setModerationStatus] = useState('draft');
+  const [moderationReason, setModerationReason] = useState<string | null>(null);
   const [cautionMonths, setCautionMonths] = useState('3');
 
   useEffect(() => {
@@ -42,7 +43,8 @@ export default function EditResidenceScreen() {
         setPrice(String(r.price_monthly ?? ''));
         setDescription(r.description ?? '');
         setPhotos(r.photos ?? []);
-        setIsVisible((r as any).is_published ?? true);
+        setModerationStatus((r as any).moderation_status ?? ((r as any).is_verified ? 'approved' : (r as any).is_published ? 'pending' : 'draft'));
+        setModerationReason((r as any).moderation_reason ?? null);
         if (r.deposit && r.price_monthly) {
           setCautionMonths(String(Math.round(Number(r.deposit) / Number(r.price_monthly))));
         }
@@ -96,7 +98,6 @@ export default function EditResidenceScreen() {
           deposit: priceNum * cautionNum,
           description,
           photos: uploadedPhotos,
-          is_published: isVisible,
         } as any)
         .eq('id', id);
 
@@ -108,6 +109,26 @@ export default function EditResidenceScreen() {
       Alert.alert('Erreur', err.message ?? 'Échec de la mise à jour.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleModeration = async () => {
+    if (!id) return;
+    try {
+      if (moderationStatus === 'pending' || moderationStatus === 'approved') {
+        const { error } = await supabase.rpc('withdraw_residence_publication', { p_residence_id: id });
+        if (error) throw error;
+        setModerationStatus('draft');
+        Alert.alert('Annonce retirée', 'Elle n’est plus visible dans la recherche.');
+      } else {
+        const { error } = await supabase.rpc('submit_residence_for_review', { p_residence_id: id });
+        if (error) throw error;
+        setModerationStatus('pending');
+        setModerationReason(null);
+        Alert.alert('Envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
+      }
+    } catch (err: any) {
+      Alert.alert('Action impossible', err.message ?? 'Une erreur est survenue.');
     }
   };
 
@@ -165,32 +186,28 @@ export default function EditResidenceScreen() {
         }}
       />
       <ScrollView className="flex-1 bg-white" contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
-        {/* Visibility toggle */}
-        <Text className="text-sm font-medium text-slate-700 mb-2">Statut de visibilité de l'annonce</Text>
-        <View className="flex-row items-center gap-3 mb-6">
-          <TouchableOpacity
-            onPress={() => setIsVisible(true)}
-            className={`flex-row items-center px-4 py-2 rounded-xl border ${isVisible ? 'bg-kaza-vert/10 border-kaza-vert' : 'border-slate-200'}`}
-          >
-            <View className={`w-2 h-2 rounded-full mr-2 ${isVisible ? 'bg-kaza-mint' : 'bg-slate-300'}`} />
-            <Text className={`text-sm font-medium ${isVisible ? 'text-kaza-vert' : 'text-slate-500'}`}>En ligne (Visible)</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setIsVisible(false)}
-            className={`flex-row items-center px-4 py-2 rounded-xl border ${!isVisible ? 'bg-slate-100 border-slate-300' : 'border-slate-200'}`}
-          >
-            <View className={`w-2 h-2 rounded-full mr-2 ${!isVisible ? 'bg-slate-500' : 'bg-slate-300'}`} />
-            <Text className={`text-sm font-medium ${!isVisible ? 'text-slate-700' : 'text-slate-500'}`}>En pause</Text>
+        {/* Moderation status */}
+        <View className="bg-slate-50 rounded-xl p-4 mb-6">
+          <Text className="text-sm font-semibold text-slate-800">Modération</Text>
+          <Text className="text-sm text-slate-600 mt-1">
+            {moderationStatus === 'approved' ? 'Approuvée et visible' :
+              moderationStatus === 'pending' ? 'En attente de modération' :
+              moderationStatus === 'rejected' ? 'Refusée — correction requise' :
+              'Brouillon'}
+          </Text>
+          {moderationStatus === 'rejected' && moderationReason ? (
+            <Text className="text-sm text-red-600 mt-2">Motif : {moderationReason}</Text>
+          ) : null}
+          <TouchableOpacity onPress={handleModeration} className="bg-kaza-vert h-11 rounded-xl items-center justify-center mt-3">
+            <Text className="text-white font-semibold">
+              {moderationStatus === 'pending' || moderationStatus === 'approved'
+                ? 'Retirer de la recherche'
+                : moderationStatus === 'rejected'
+                  ? 'Resoumettre à la modération'
+                  : 'Soumettre à la modération'}
+            </Text>
           </TouchableOpacity>
         </View>
-
-        {!isVisible && (
-          <View className="bg-slate-50 rounded-xl p-3 mb-6 flex-row items-start">
-            <Text className="text-xs text-slate-500 flex-1">
-              Mettez en pause si vous avez trouvé un locataire pour ne plus recevoir d'appels.
-            </Text>
-          </View>
-        )}
 
         {/* Title */}
         <Text className="text-sm font-medium text-slate-700 mb-1.5">Titre de l'annonce</Text>
