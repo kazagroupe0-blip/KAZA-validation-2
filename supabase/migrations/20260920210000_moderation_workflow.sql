@@ -102,7 +102,7 @@ as $$
 begin
   update public.residences
   set is_published = false,
-      moderation_status = case when moderation_status = 'approved' then 'draft' else moderation_status end,
+      moderation_status = case when moderation_status in ('pending','approved') then 'draft' else moderation_status end,
       updated_at = now()
   where id = p_residence_id
     and owner_id = auth.uid()
