@@ -66,3 +66,41 @@ test.describe('Static pages', () => {
     await expect(page.getByText(/loi APDP/i)).toBeVisible();
   });
 });
+
+test.describe('Landlord profile completion', () => {
+  test('new landlord can complete profile and the warning disappears', async ({ page }) => {
+    const unique = Date.now();
+    const email = `landlord_${unique}@kaza.test`;
+
+    await page.goto('/register');
+    await page.getByLabel(/je suis/i).selectOption({ label: 'Un bailleur — je loue des biens' });
+    await page.getByLabel(/nom complet/i).fill('Propriétaire Test');
+    await page.getByLabel(/e-?mail/i).fill(email);
+    await page.getByLabel(/téléphone.*whatsapp/i).fill('01 90 00 00 00');
+    await page.getByRole('textbox', { name: /mot de passe/i }).fill('TestPass123!');
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: /créer mon compte/i }).click();
+
+    await page.waitForURL(/explorer/, { timeout: 15_000 });
+    await page.goto('/profile');
+
+    await expect(page.locator('#main').getByText(/profil propriétaire incomplet/i)).toBeVisible();
+    await expect(page.getByLabel(/numéro mobile money/i)).toBeVisible();
+
+    const bell = page.getByRole('button', { name: /^Notifications(?: \(\d+ non lues\))?$/i });
+    await expect(bell).toBeVisible();
+    await bell.click();
+    const notificationPanel = page.getByRole('region', { name: 'Notifications' });
+    await expect(notificationPanel.getByText(/profil propriétaire incomplet/i)).toBeVisible();
+
+    await page.getByRole('textbox', { name: /nom ou raison sociale/i }).fill('KAZA Immo Test');
+    await page.getByLabel(/opérateur mobile money/i).selectOption('mtn');
+    await page.getByLabel(/numéro mobile money/i).fill('+2290190000000');
+    await page.getByRole('button', { name: /enregistrer les modifications/i }).click();
+
+    await expect(page.getByText(/profil propriétaire complet/i)).toBeVisible({ timeout: 10_000 });
+
+    await bell.click();
+    await expect(page.locator('#main').getByText(/profil propriétaire incomplet/i)).not.toBeVisible();
+  });
+});

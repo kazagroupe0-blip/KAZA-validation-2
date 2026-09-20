@@ -53,6 +53,7 @@ export default function NotificationsScreen() {
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
+        .is('resolved_at', null)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -77,7 +78,8 @@ export default function NotificationsScreen() {
       setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, read_at: new Date().toISOString() } : n));
     }
     const meta = notif.data as Record<string, string> | null;
-    if (meta?.residence_id) router.push(`/residence/${meta.residence_id}`);
+    if (meta?.href) router.push(meta.href);
+    else if (meta?.residence_id) router.push(`/residence/${meta.residence_id}`);
   };
 
   const getTimeAgo = (date: string) => {

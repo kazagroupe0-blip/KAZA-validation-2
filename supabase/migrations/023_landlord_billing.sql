@@ -50,13 +50,17 @@ set search_path = public
 as $$
 declare
   v_uid uuid := auth.uid();
+  v_role public.user_role;
 begin
   if v_uid is null then
     raise exception 'Non authentifié' using errcode = '42501';
   end if;
 
-  -- note : on force le rôle bailleur ici. Un locataire qui appelle cette
-  -- RPC bascule bailleur — cohérent avec l'UX du tunnel post-inscription.
+  select role into v_role from public.profiles where id = v_uid;
+  if v_role <> 'bailleur' then
+    raise exception 'Seuls les bailleurs peuvent compléter cet onboarding' using errcode = '42501';
+  end if;
+
   update public.profiles
      set business_name        = coalesce(nullif(trim(p_business_name), ''), business_name),
          tax_id               = nullif(trim(p_tax_id), ''),
@@ -64,7 +68,6 @@ begin
          momo_number          = p_momo_number,
          bank_name            = nullif(trim(coalesce(p_bank_name, '')), ''),
          bank_iban            = nullif(trim(coalesce(p_bank_iban, '')), ''),
-         role                 = 'bailleur',
          onboarding_completed = true
    where id = v_uid;
 

@@ -48,6 +48,7 @@ export async function resetDatabase() {
       'conversations',
       'leases',
       'notifications',
+      'landlord_payouts',
       'admin_audit_logs',
       'residences',
     ] as const;

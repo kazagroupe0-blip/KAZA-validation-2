@@ -2,6 +2,7 @@ import { supabase } from '../supabase-client';
 import type {
   PaymentWithRelations,
   ReceiptWithRelations,
+  LandlordPayout,
 } from '../types';
 import { normalizeError, callFunction } from '../supabase-api';
 import { requireUser } from '../require-user';
@@ -82,4 +83,15 @@ export async function rejectPayment(paymentId: string): Promise<void> {
 
 export async function signReceipt(receiptId: string): Promise<SignReceiptResult> {
   return callFunction<SignReceiptResult>('receipts-sign', { receipt_id: receiptId });
+}
+
+export async function listMyLandlordPayouts(limit = 10): Promise<LandlordPayout[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+  const { data, error } = await supabase
+    .from('landlord_payouts')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+  if (error) throw normalizeError(error, 'Chargement des reversements impossible');
+  return (data ?? []) as LandlordPayout[];
 }

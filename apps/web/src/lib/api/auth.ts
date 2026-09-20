@@ -2,6 +2,7 @@ import { supabase } from '../supabase-client';
 import type { Profile } from '../types';
 import { ApiError, normalizeError } from '../supabase-api';
 import { requireUser } from '../require-user';
+import type { MomoProvider } from './account';
 
 /** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
 function assertBeninPhone(phone: string): void {
@@ -159,10 +160,27 @@ export async function getMyProfile(): Promise<Profile | null> {
   return data;
 }
 
-export async function updateProfile(patch: { full_name?: string; phone?: string | null }): Promise<void> {
+export interface ProfileUpdateInput {
+  full_name?: string;
+  phone?: string | null;
+  business_name?: string | null;
+  tax_id?: string | null;
+  momo_provider?: MomoProvider | null;
+  momo_number?: string | null;
+  bank_name?: string | null;
+  bank_iban?: string | null;
+}
+
+export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
   const user = await requireUser().catch(() => null);
   if (!user) return;
+
   const payload = { ...patch };
+
+  if (typeof payload.full_name === 'string') {
+    payload.full_name = payload.full_name.trim();
+  }
+
   if (typeof payload.phone === 'string') {
     const cleaned = payload.phone.replace(/\s+/g, '');
     if (cleaned === '') {
@@ -172,6 +190,47 @@ export async function updateProfile(patch: { full_name?: string; phone?: string 
       payload.phone = cleaned;
     }
   }
+
+  if (typeof payload.momo_number === 'string') {
+    const cleaned = payload.momo_number.replace(/\s+/g, '');
+    if (cleaned === '') {
+      payload.momo_number = null;
+    } else {
+      assertBeninPhone(cleaned);
+      payload.momo_number = cleaned;
+    }
+  }
+
+  if (payload.momo_provider !== undefined && payload.momo_provider !== null) {
+    if (!['mtn', 'moov', 'celtiis'].includes(payload.momo_provider)) {
+      throw new ApiError(400, 'Opérateur Mobile Money invalide');
+    }
+  }
+
+  if (payload.momo_number && !payload.momo_provider) {
+    const { data: current } = await supabase
+      .from('profiles')
+      .select('momo_provider')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (!current?.momo_provider) {
+      throw new ApiError(400, 'Choisissez un opérateur Mobile Money avant d’enregistrer le numéro.');
+    }
+  }
+
+  if ('business_name' in payload && typeof payload.business_name === 'string') {
+    payload.business_name = payload.business_name.trim() || null;
+  }
+  if ('tax_id' in payload && typeof payload.tax_id === 'string') {
+    payload.tax_id = payload.tax_id.trim() || null;
+  }
+  if ('bank_name' in payload && typeof payload.bank_name === 'string') {
+    payload.bank_name = payload.bank_name.trim() || null;
+  }
+  if ('bank_iban' in payload && typeof payload.bank_iban === 'string') {
+    payload.bank_iban = payload.bank_iban.replace(/\s+/g, '').trim() || null;
+  }
+
   const { error } = await supabase
     .from('profiles')
     .update(payload)

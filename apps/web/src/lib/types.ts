@@ -22,6 +22,7 @@ export type Lease = Database['public']['Tables']['leases']['Row'];
 export type Payment = Database['public']['Tables']['payments']['Row'];
 export type Receipt = Database['public']['Tables']['receipts']['Row'];
 export type AppNotification = Database['public']['Tables']['notifications']['Row'];
+export type LandlordPayout = Database['public']['Tables']['landlord_payouts']['Row'];
 
 export interface Visit {
   id: string;

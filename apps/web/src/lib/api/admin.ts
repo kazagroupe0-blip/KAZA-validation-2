@@ -1,5 +1,5 @@
 import { supabase } from '../supabase-client';
-import type { AdminStats, Profile, Residence } from '../types';
+import type { AdminStats, LandlordPayout, Profile, Residence } from '../types';
 import type { Json } from '../database.types';
 import { normalizeError } from '../supabase-api';
 
@@ -108,4 +108,21 @@ async function logAdminAction(
   if (error) {
     console.error('Failed to log admin action:', error);
   }
+}
+
+export async function adminListLandlordPayouts(limit = 30): Promise<LandlordPayout[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+  const { data, error } = await supabase
+    .from('landlord_payouts')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+  if (error) throw normalizeError(error, 'Chargement des reversements impossible');
+  return (data ?? []) as LandlordPayout[];
+}
+
+export async function adminRetryLandlordPayout(payoutId: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_retry_landlord_payout', { p_payout_id: payoutId });
+  if (error) throw normalizeError(error, 'Relance du reversement impossible');
+  await logAdminAction('retry_landlord_payout', 'landlord_payout', payoutId);
 }

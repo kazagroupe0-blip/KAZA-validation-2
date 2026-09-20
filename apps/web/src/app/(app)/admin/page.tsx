@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Building2, Wallet, FileText, CheckCircle2, Crown, Shield } from 'lucide-react';
+import { Users, Building2, Wallet, FileText, CheckCircle2, Crown, Shield, RefreshCw } from 'lucide-react';
 import {
   adminStats,
   adminListResidences,
@@ -9,9 +9,11 @@ import {
   adminModerateResidence,
   adminSetPremium,
   adminToggleRole,
+  adminListLandlordPayouts,
+  adminRetryLandlordPayout,
 } from '@/lib/supabase-api';
 import { useAuth } from '@/lib/auth-context';
-import type { Profile, ResidenceWithRelations } from '@/lib/types';
+import type { LandlordPayout, Profile, ResidenceWithRelations } from '@/lib/types';
 import { formatXof } from '@/lib/format';
 import { apiToast } from '@/lib/api-toast';
 import { Button } from '@/components/ui/button';
@@ -32,19 +34,22 @@ export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [residences, setResidences] = useState<ResidenceWithRelations[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
+  const [payouts, setPayouts] = useState<LandlordPayout[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     try {
-      const [s, r, u] = await Promise.all([
+      const [s, r, u, p] = await Promise.all([
         adminStats(),
         adminListResidences(30),
         adminListUsers(30),
+        adminListLandlordPayouts(30),
       ]);
       setStats(s);
       setResidences(r);
       setUsers(u);
+      setPayouts(p);
     } catch (err) {
       apiToast(toast, err, 'Chargement de l\u2019administration impossible');
     } finally {
@@ -141,6 +146,42 @@ export default function AdminPage() {
                     Refuser
                   </Button>
                 </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {payouts.some((p) => p.status === 'manual_review') && (
+        <section className="mt-8" aria-labelledby="payouts-review">
+          <h2 id="payouts-review" className="font-display text-lg font-semibold text-kaza-text">
+            Reversements à traiter
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {payouts.filter((p) => p.status === 'manual_review').map((payout) => (
+              <li key={payout.id} className="kaza-card flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-kaza-text">
+                    {formatXof(payout.amount)} · {payout.recipient_provider ?? 'opérateur inconnu'}
+                  </p>
+                  <p className="text-xs text-kaza-faint">
+                    Propriétaire : {users.find((u) => u.id === payout.landlord_id)?.full_name ?? payout.landlord_id}
+                    {payout.recipient_phone ? ` · ${payout.recipient_phone}` : ''}
+                  </p>
+                  {payout.last_error && (
+                    <p className="mt-1 break-words text-xs text-kaza-danger">{payout.last_error}</p>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="btn-responsive-sm"
+                  loading={busy === payout.id}
+                  onClick={() => void act(() => adminRetryLandlordPayout(payout.id), payout.id)}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                  Relancer
+                </Button>
               </li>
             ))}
           </ul>

@@ -29,6 +29,7 @@ const TYPE_ICONS: Record<string, string> = {
 /** Cible de navigation déduite du type + payload de la notification. */
 function targetFrom(n: AppNotification): string | null {
   const d = (n.data ?? {}) as Record<string, string | undefined>;
+  if (d.href) return d.href;
   if (d.conversation_id) return `/chat/${d.conversation_id}`;
   if (d.residence_id) return `/landlord/residences/${d.residence_id}/edit`;
   return '/dashboard';
@@ -57,7 +58,13 @@ export function NotificationBell() {
     };
     void load();
 
-    // note : notifications temps réel via Supabase Realtime (table notifications)
+    const onNotificationsRefresh = () => {
+      void load();
+    };
+    window.addEventListener('kaza:notifications-refresh', onNotificationsRefresh);
+
+    // Notifications temps réel : insertions normales + résolution automatique
+    // d'une alerte métier (ex. profil propriétaire complété).
     const channel = supabase
       .channel(`notifications:${user.id}`)
       .on(
@@ -65,14 +72,26 @@ export function NotificationBell() {
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
         (payload: RealtimePostgresInsertPayload<AppNotification>) => {
           const n = payload.new as AppNotification;
+          if (n.resolved_at) return;
           setItems((prev) => [n, ...prev].slice(0, 30));
-          setUnread((u) => u + 1);
+          if (!n.read_at) setUnread((u) => u + 1);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          const n = payload.new as AppNotification;
+          if (!n.resolved_at) return;
+          setItems((prev) => prev.filter((item) => item.id !== n.id));
+          if (!n.read_at) setUnread((u) => Math.max(0, u - 1));
         },
       )
       .subscribe();
 
     return () => {
       mounted = false;
+      window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
       void supabase.removeChannel(channel);
     };
   }, [user]);
@@ -133,6 +152,8 @@ export function NotificationBell() {
 
       {open && (
         <div
+          role="region"
+          aria-label="Notifications"
           className="absolute right-0 top-11 w-[min(90vw,360px)] overflow-hidden rounded-kaza-lg border border-kaza-border bg-kaza-surface shadow-card-hover"
         >
           <div className="flex items-center justify-between border-b border-kaza-border px-4 py-3">

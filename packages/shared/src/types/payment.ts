@@ -9,6 +9,8 @@ export type PaymentInsert = Database['public']['Tables']['payments']['Insert'];
 export type PaymentUpdate = Database['public']['Tables']['payments']['Update'];
 
 export type Receipt = Database['public']['Tables']['receipts']['Row'];
+export type LandlordPayout = Database['public']['Tables']['landlord_payouts']['Row'];
+export type LandlordPayoutStatus = LandlordPayout['status'];
 
 export type PaymentWithRelations = Payment & {
   lease?: {

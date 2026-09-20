@@ -51,6 +51,7 @@ FEDAPAY_SECRET_KEY = "CHANGEME_sk_dev_fedapay"
 FEDAPAY_API_BASE = "https://sandbox-api.fedapay.com/v1"
 FEDAPAY_WEBHOOK_SECRET = "CHANGEME_wh_dev_secret"
 CRON_SECRET = "CHANGEME_dev-cron-secret"
+PAYOUTS_ENABLED = "false"
 BREVO_API_KEY = "CHANGEME_brevo_api_key"
 BREVO_SENDER_EMAIL = "noreply@kaza.bj"
 BREVO_SENDER_NAME = "KAZA.BJ"
@@ -73,3 +74,6 @@ verify_jwt = false
 
 [analytics]
 enabled = false
+
+[functions.landlord-payouts]
+verify_jwt = false

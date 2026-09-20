@@ -37,7 +37,7 @@ create or replace function public.residences_guard_owner()
 returns trigger language plpgsql security definer set search_path = public
 as $$
 begin
-  if auth.role() = 'service_role' or auth.role() is null or current_user = 'postgres' or public.is_admin() then
+  if auth.role() = 'service_role' or auth.role() is null or public.is_admin() then
     return new;
   end if;
 
