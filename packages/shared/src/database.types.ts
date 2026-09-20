@@ -670,6 +670,9 @@ export type Database = {
           id: string
           is_published: boolean
           is_verified: boolean
+          moderation_reason: string | null
+          moderation_status: string
+          moderated_at: string | null
           lat: number | null
           lng: number | null
           owner_id: string
@@ -695,6 +698,9 @@ export type Database = {
           id?: string
           is_published?: boolean
           is_verified?: boolean
+          moderation_reason?: string | null
+          moderation_status?: string
+          moderated_at?: string | null
           lat?: number | null
           lng?: number | null
           owner_id: string
@@ -1051,6 +1057,14 @@ export type Database = {
             }
             Returns: string
           }
+      submit_residence_for_review: {
+        Args: { p_residence_id: string }
+        Returns: undefined
+      }
+      withdraw_residence_publication: {
+        Args: { p_residence_id: string }
+        Returns: undefined
+      }
       admin_moderate_residence: {
         Args: { p_action: string; p_reason?: string; p_residence_id: string }
         Returns: undefined
