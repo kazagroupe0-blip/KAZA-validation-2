@@ -6,8 +6,7 @@ import {
   adminStats,
   adminListResidences,
   adminListUsers,
-  adminVerifyResidence,
-  adminUnpublishResidence,
+  adminModerateResidence,
   adminSetPremium,
   adminToggleRole,
 } from '@/lib/supabase-api';
@@ -90,7 +89,7 @@ export default function AdminPage() {
     { icon: FileText, label: 'Baux actifs', value: String(stats.leases.total), sub: 'en cours de gestion' },
   ];
 
-  const pendingModeration = residences.filter((r) => r.is_published && !r.is_verified);
+  const pendingModeration = residences.filter((r) => r.moderation_status === 'pending');
 
   return (
     <div>
@@ -125,12 +124,21 @@ export default function AdminPage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button size="sm" variant="success" className="btn-responsive-sm" loading={busy === r.id} onClick={() => act(() => adminVerifyResidence(r.id), r.id)}>
+                  <Button size="sm" variant="success" className="btn-responsive-sm" loading={busy === r.id} onClick={() => act(() => adminModerateResidence(r.id, 'approve'), r.id)}>
                     <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
                     Approuver
                   </Button>
-                  <Button size="sm" variant="danger" className="btn-responsive-sm" loading={busy === r.id} onClick={() => act(() => adminUnpublishResidence(r.id), r.id)}>
-                    Retirer
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    className="btn-responsive-sm"
+                    loading={busy === r.id}
+                    onClick={() => {
+                      const reason = window.prompt('Motif du refus (obligatoire) :', '');
+                      if (reason?.trim()) void act(() => adminModerateResidence(r.id, 'reject', reason.trim()), r.id);
+                    }}
+                  >
+                    Refuser
                   </Button>
                 </div>
               </li>
