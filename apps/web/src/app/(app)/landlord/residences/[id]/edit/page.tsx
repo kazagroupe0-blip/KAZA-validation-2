@@ -6,6 +6,8 @@ import { ArrowLeft, Rocket, KeyRound } from 'lucide-react';
 import {
   getResidence,
   updateResidence,
+  submitResidenceForReview,
+  withdrawResidencePublication,
   createLease,
   listTenants,
   ApiError,
@@ -36,6 +38,7 @@ export default function EditResidencePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string>('libre');
   const [published, setPublished] = useState(false);
+  const [moderationStatus, setModerationStatus] = useState<string>('draft');
   const [leaseModal, setLeaseModal] = useState(false);
   const [tenants, setTenants] = useState<Profile[]>([]);
 
@@ -45,6 +48,7 @@ export default function EditResidencePage() {
         setResidence(r);
         setStatus(r.status);
         setPublished(r.is_published);
+        setModerationStatus(r.moderation_status ?? (r.is_verified ? 'approved' : r.is_published ? 'pending' : 'draft'));
       })
       .catch(() => toast.error('Bien introuvable'))
       .finally(() => setLoading(false));
@@ -67,17 +71,32 @@ export default function EditResidencePage() {
   }
 
   async function togglePublish() {
-    const next = !published;
     try {
-      await updateResidence(id, { is_published: next });
-      setPublished(next);
-      toast.success(next ? 'Bien envoyé en modération' : 'Bien retiré de la recherche');
+      if (moderationStatus === 'pending' || moderationStatus === 'approved') {
+        await withdrawResidencePublication(id);
+        setPublished(false);
+        setModerationStatus(moderationStatus === 'approved' ? 'draft' : moderationStatus);
+        toast.success('Annonce retirée', 'Elle n’est plus visible dans la recherche.');
+      } else {
+        await submitResidenceForReview(id);
+        setPublished(true);
+        setModerationStatus('pending');
+        toast.success('Annonce envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         toast.error('Limite du plan gratuit', '1 bien en ligne — passez au Premium pour en publier plus.');
-      } else toast.error('Action impossible');
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'Action impossible');
+      }
     }
   }
+
+  const moderationLabel =
+    moderationStatus === 'approved' ? 'Approuvée et visible' :
+    moderationStatus === 'pending' ? 'En attente de modération' :
+    moderationStatus === 'rejected' ? 'Refusée — correction requise' :
+    'Brouillon';
 
   if (loading) {
     return (
@@ -121,9 +140,20 @@ export default function EditResidencePage() {
           </Button>
           <Button variant={published ? 'secondary' : 'primary'} onClick={() => void togglePublish()} data-testid="publish-toggle">
             <Rocket className="h-4 w-4" aria-hidden />
-            {published ? 'Retirer de la recherche' : 'Publier'}
+            {moderationStatus === 'pending' || moderationStatus === 'approved' ? 'Retirer de la recherche' : moderationStatus === 'rejected' ? 'Resoumettre à la modération' : 'Soumettre à la modération'}
           </Button>
         </div>
+      </div>
+
+      <div className="mt-5 rounded-kaza border border-kaza-border bg-kaza-bg p-4" data-testid="moderation-status">
+        <p className="text-xs font-semibold uppercase tracking-wide text-kaza-faint">Modération</p>
+        <p className="mt-1 text-sm font-medium text-kaza-text">{moderationLabel}</p>
+        {moderationStatus === 'rejected' && residence.moderation_reason ? (
+          <p className="mt-2 text-sm text-kaza-danger"><strong>Motif :</strong> {residence.moderation_reason}</p>
+        ) : null}
+        {moderationStatus === 'pending' ? (
+          <p className="mt-2 text-xs text-kaza-muted">Votre annonce n’est pas encore visible dans la recherche. Elle le deviendra après approbation.</p>
+        ) : null}
       </div>
 
       {/* Statut */}
