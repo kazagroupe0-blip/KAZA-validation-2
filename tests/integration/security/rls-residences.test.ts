@@ -79,10 +79,14 @@ describe('RLS: residences table', () => {
         p_residence_id: residenceId,
         p_action: 'approve',
       });
-      expect(moderated.error).toBeNull();
+      if (moderated.error) {
+        throw new Error(`admin_moderate_residence failed: ${JSON.stringify(moderated.error)}`);
+      }
 
       const { data, error } = await getClient(tenantA).from('residences').select('*').eq('id', residenceId).single();
-      expect(error).toBeNull();
+      if (error) {
+        throw new Error(`authenticated residence SELECT failed: ${JSON.stringify(error)}`);
+      }
       expect(data?.is_published).toBe(true);
       expect(data?.is_verified).toBe(true);
     });
