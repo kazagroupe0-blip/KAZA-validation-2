@@ -74,11 +74,12 @@ export function ChatWindow() {
     let channel: ReturnType<typeof realtimeClient.channel> | null = null;
     let cancelled = false;
     setIsConnected(false);
+    setRealtimeError(null);
 
     void (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session || cancelled) {
-        console.warn('[kaza:realtime] session unavailable');
+        setRealtimeError('Session Supabase indisponible pour Realtime');
         return;
       }
 
@@ -98,8 +99,12 @@ export function ChatWindow() {
         )
         .subscribe((status: REALTIME_SUBSCRIBE_STATES, err?: Error) => {
           setIsConnected(status === 'SUBSCRIBED');
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.error('[kaza:realtime] subscription failed', status, err?.message ?? '');
+          if (status === 'SUBSCRIBED') {
+            setRealtimeError(null);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            const message = err?.message || status;
+            setRealtimeError(message);
+            console.error('[kaza:realtime] subscription failed', status, message);
           }
         });
     })();
@@ -125,6 +130,7 @@ export function ChatWindow() {
   // Résolues en parallèle par lots de 6 (pas de round-trip séquentiel).
   const [signedAttachments, setSignedAttachments] = useState<Record<string, string>>({});
   const [isConnected, setIsConnected] = useState(true);
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -252,6 +258,7 @@ export function ChatWindow() {
             <span
               data-testid="realtime-status"
               data-state={isConnected ? 'connected' : 'disconnected'}
+              data-error={realtimeError ?? ''}
               className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`}
               title={isConnected ? 'Connecté' : 'Déconnecté'}
             />
