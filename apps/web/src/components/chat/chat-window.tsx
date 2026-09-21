@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Check, CheckCheck, Calendar, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, Calendar, Paperclip, Send, X } from 'lucide-react';
 import {
   listMessages,
   sendMessage,
@@ -18,11 +18,10 @@ import { VisitProposalModal } from './VisitProposalModal';
 import { useAuth } from '@/lib/auth-context';
 import { supabase, supabaseRealtime } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload, REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
-import type { ConversationWithRelations, Message } from '@/lib/types';
+import type { ConversationWithRelations, Message, Visit } from '@/lib/types';
 import { timeAgo, formatXof } from '@/lib/format';
 import { apiToast } from '@/lib/api-toast';
 import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 
@@ -39,7 +38,7 @@ export function ChatWindow() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [visits, setVisits] = useState<import('@/lib/types').Visit[]>([]);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [proposeModal, setProposeModal] = useState(false);
   const [isLandlord, setIsLandlord] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
