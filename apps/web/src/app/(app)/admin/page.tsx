@@ -29,7 +29,7 @@ interface Stats {
 }
 
 export default function AdminPage() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const toast = useToast();
   const [stats, setStats] = useState<Stats | null>(null);
   const [residences, setResidences] = useState<ResidenceWithRelations[]>([]);
@@ -207,10 +207,12 @@ export default function AdminPage() {
                   <Button size="sm" variant="ghost" className="btn-responsive-sm" loading={busy === u.id} onClick={() => act(() => adminSetPremium(u.id, !u.is_premium), u.id)}>
                     {u.is_premium ? 'Retirer Premium' : 'Passer Premium'}
                   </Button>
-                  <Button size="sm" variant="ghost" className="btn-responsive-sm" loading={busy === u.id} onClick={() => act(() => adminToggleRole(u.id, u.role === 'bailleur' ? 'locataire' : 'bailleur'), u.id)}>
-                    <Shield className="h-3.5 w-3.5" aria-hidden />
-                    {u.role === 'bailleur' ? '→ locataire' : '→ bailleur'}
-                  </Button>
+                  {u.role !== 'admin' && u.id !== user?.id && (
+                    <Button size="sm" variant="ghost" className="btn-responsive-sm" loading={busy === u.id} onClick={() => act(() => adminToggleRole(u.id, u.role === 'bailleur' ? 'locataire' : 'bailleur'), u.id)}>
+                      <Shield className="h-3.5 w-3.5" aria-hidden />
+                      {u.role === 'bailleur' ? '→ locataire' : '→ bailleur'}
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}
