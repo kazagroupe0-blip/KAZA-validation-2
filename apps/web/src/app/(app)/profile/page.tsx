@@ -106,7 +106,9 @@ export default function ProfilePage() {
         const candidate: Profile = {
           ...user,
           full_name: fullName.trim(),
-          phone: phone.replace(/\s+/g, ''),
+          phone: /^\d{10}$/.test(phone.replace(/\s+/g, ''))
+            ? `+229${phone.replace(/\s+/g, '')}`
+            : phone.replace(/\s+/g, ''),
           business_name: businessName.trim() || null,
           momo_provider: momoProvider || null,
           momo_number: momoNumber.replace(/\s+/g, '') || null,
