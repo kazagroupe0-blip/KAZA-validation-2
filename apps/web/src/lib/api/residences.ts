@@ -128,7 +128,7 @@ export async function updateResidence(
       : patch.city || patch.zone
         ? await geocode(patch.city ?? '', patch.zone ?? '')
         : null;
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('residences')
     .update({
       ...patch,
@@ -136,8 +136,14 @@ export async function updateResidence(
       lng: geo?.lng ?? patch.lng ?? null,
       geom: geo ? `SRID=4326;POINT(${geo.lng} ${geo.lat})` : null,
     })
-    .eq('id', id);
+    .eq('id', id)
+    .select('id, photos')
+    .single();
   if (error) throw normalizeError(error, 'Mise à jour impossible');
+  if (!data) throw new Error('Mise à jour impossible : résidence introuvable');
+  if ('photos' in patch && Array.isArray(patch.photos) && data.photos.length !== patch.photos.length) {
+    throw new Error('Mise à jour impossible : les photos n\'ont pas été enregistrées');
+  }
 }
 
 export async function submitResidenceForReview(id: string): Promise<void> {
