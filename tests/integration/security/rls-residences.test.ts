@@ -96,6 +96,33 @@ describe('RLS: residences table', () => {
       expect(data).toBeNull();
     });
 
+    it('tenant cannot fetch a draft residence through get_residence RPC', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+      const { data, error } = await getClient(tenantA).rpc('get_residence', {
+        p_residence_id: residenceId,
+      });
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
+    });
+
+    it('tenant cannot fetch an occupied residence through get_residence RPC', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: true,
+        is_verified: true,
+        status: 'occupee',
+        moderation_status: 'approved',
+      });
+      const { data, error } = await getClient(tenantA).rpc('get_residence', {
+        p_residence_id: residenceId,
+      });
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
+    });
+
     it('landlord CAN see own draft/unverified residences', async () => {
       const residenceId = await createResidenceDirect(landlordA.user.id, { is_published: false, is_verified: false });
       const clientLandlord = getClient(landlordA);
