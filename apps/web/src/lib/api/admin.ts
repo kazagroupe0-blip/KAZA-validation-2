@@ -16,21 +16,6 @@ export async function adminListResidences(limit = 30): Promise<Residence[]> {
     p_offset: 0,
   });
   if (error) throw normalizeError(error, 'Chargement impossible');
-  if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
-    console.log(
-      '[KAZA:RESIDENCE_DIAGNOSTIC] ADMIN_RESIDENCE_LIST',
-      JSON.stringify(
-        (data ?? []).map((value) => {
-          const r = value as unknown as { id: string; title: string; moderation_status?: string };
-          return {
-            id: r.id,
-            title: r.title,
-            moderation_status: r.moderation_status ?? null,
-          };
-        }),
-      ),
-    );
-  }
   return (data ?? []) as unknown as Residence[];
 }
 
@@ -74,12 +59,6 @@ export async function adminModerateResidence(id: string, action: 'approve' | 're
     p_action: action,
     p_reason: reason,
   });
-  if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
-    console.log(
-      '[KAZA:RESIDENCE_DIAGNOSTIC] ADMIN_MODERATION_RPC',
-      JSON.stringify({ id, action, rpcError: error ?? null }),
-    );
-  }
   if (error) throw normalizeError(error, 'Action impossible');
   await logAdminAction(`moderate_residence_${action}`, 'residence', id, null, { reason });
 }
