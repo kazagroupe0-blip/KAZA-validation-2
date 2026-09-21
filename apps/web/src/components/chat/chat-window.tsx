@@ -7,7 +7,9 @@ import {
   listMessages,
   sendMessage,
   markConversationRead,
-  agreeVisit,
+  confirmVisit,
+  declineVisit,
+  listVisits,
   getConversation,
   getSignedStorageUrl,
   proposeVisit,
@@ -37,7 +39,7 @@ export function ChatWindow() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [visitModal, setVisitModal] = useState(false);
+  const [visits, setVisits] = useState<import('@/lib/types').Visit[]>([]);
   const [proposeModal, setProposeModal] = useState(false);
   const [isLandlord, setIsLandlord] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -46,9 +48,14 @@ export function ChatWindow() {
 
   const load = useCallback(async () => {
     try {
-      const [list, conv] = await Promise.all([listMessages(id), getConversation(id)]);
+      const [list, conv, visitList] = await Promise.all([
+        listMessages(id),
+        getConversation(id),
+        listVisits(id),
+      ]);
       setMessages(list);
       setConversation(conv);
+      setVisits(visitList);
     } catch {
       toast.error('Chargement de la conversation impossible');
     } finally {
@@ -208,15 +215,32 @@ export function ChatWindow() {
     return urls;
   }
 
-  async function handleVisit(agreed: boolean) {
-    setVisitModal(false);
+  function formatVisitSlot(start: string, end: string): string {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    return startDate.toLocaleDateString('fr-FR') + ' à ' +
+      startDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) +
+      ' → ' +
+      endDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function handleConfirmVisit(visitId: string) {
     try {
-      await agreeVisit(id, agreed);
-      toast.success(agreed ? 'Visite confirmée' : 'Visite refusée');
-      // RPC agree_visit already inserts a system message (kind='visit_agreed' or 'system')
-      // Do NOT pre-fill the input to avoid duplicate message if user clicks send
-    } catch {
-      toast.error('Action impossible');
+      await confirmVisit(visitId);
+      toast.success('Visite confirmée');
+      await load();
+    } catch (err) {
+      apiToast(toast, err, 'Confirmation impossible');
+    }
+  }
+
+  async function handleDeclineVisit(visitId: string) {
+    try {
+      await declineVisit(visitId);
+      toast.success('Proposition refusée');
+      await load();
+    } catch (err) {
+      apiToast(toast, err, 'Refus impossible');
     }
   }
 
@@ -225,7 +249,7 @@ export function ChatWindow() {
     try {
       await proposeVisit(id, slots);
       toast.success('Visite proposée');
-      // The proposeVisit RPC/insert will create a visit_request message
+      await load();
     } catch {
       toast.error('Proposition impossible');
     }
@@ -280,6 +304,33 @@ export function ChatWindow() {
           </Button>
         )}
       </div>
+
+      {/* Demandes de visite en attente : la confirmation porte sur une ligne visits réelle. */}
+      {isLandlord && visits.some((visit) => visit.status === 'proposed') && (
+        <div data-testid="visit-proposals" className="border-b border-kaza-border bg-kaza-brand/[0.04] px-4 py-3">
+          <p className="text-sm font-semibold text-kaza-text">Demandes de visite en attente</p>
+          <div className="mt-2 space-y-2">
+            {visits
+              .filter((visit) => visit.status === 'proposed')
+              .map((visit) => (
+                <div key={visit.id} className="flex flex-col gap-2 rounded-kaza border border-kaza-border bg-kaza-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-kaza-text">{formatVisitSlot(visit.slot_start, visit.slot_end)}</p>
+                    <p className="text-xs text-kaza-faint">Proposé par le locataire</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => void handleDeclineVisit(visit.id)}>
+                      Refuser
+                    </Button>
+                    <Button size="sm" onClick={() => void handleConfirmVisit(visit.id)}>
+                      Confirmer
+                    </Button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
@@ -396,22 +447,6 @@ export function ChatWindow() {
           <Send className="h-4 w-4" aria-hidden />
         </Button>
       </form>
-
-      {/* Modale de validation de visite (bailleur) */}
-      <Modal open={visitModal} onClose={() => setVisitModal(false)} title="Valider une visite">
-        <p className="text-sm leading-relaxed text-kaza-muted">
-          Confirmez au locataire que vous acceptez la visite. Le bien passera en statut « En visite »
-          jusqu’à votre décision.
-        </p>
-        <div className="mt-5 flex gap-3">
-          <Button variant="secondary" className="flex-1" onClick={() => void handleVisit(false)}>
-            Refuser
-          </Button>
-          <Button className="flex-1" onClick={() => void handleVisit(true)}>
-            Confirmer la visite
-          </Button>
-        </div>
-      </Modal>
 
       {/* Modale proposition de visite (locataire) */}
       {proposeModal && (
