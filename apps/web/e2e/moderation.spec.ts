@@ -53,6 +53,30 @@ test.describe('Cycle de modération des résidences', () => {
         console.log(`[KAZA:E2E_BROWSER] ${message.text()}`);
       }
     });
+
+    page.on('response', async (response) => {
+      const url = response.url();
+      const request = response.request();
+      const isResidenceUpdate = request.method() === 'PATCH' && url.includes('/rest/v1/residences?');
+      const isGetResidence = request.method() === 'POST' && url.includes('/rest/v1/rpc/get_residence');
+      if (!isResidenceUpdate && !isGetResidence) return;
+
+      try {
+        const body = await response.json();
+        console.log(
+          `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=${JSON.stringify(body)}`,
+        );
+      } catch (error) {
+        console.log(
+          `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=<non-json> error=${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
+    page.on('console', (message) => {
+      if (message.text().includes('[KAZA:RESIDENCE_DIAGNOSTIC]')) {
+        console.log(`[KAZA:E2E_BROWSER] ${message.text()}`);
+      }
+    });
     // 1. Le bailleur prépare une annonce brouillon.
     await login(page, LANDLORD_EMAIL, LANDLORD_PW);
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
