@@ -48,8 +48,8 @@ async function expectTitleVisibleInSearch(page: Page, title: string) {
 
 test.describe('Cycle de modération des résidences', () => {
   test('soumission → refus → resoumission → approbation → édition invalidante', async ({ page }) => {
-    let lastResidenceUpdateRequest: unknown = null;
-    let lastResidenceUpdateReturn: unknown = null;
+    let lastResidenceMutationRequest: unknown = null;
+    let lastResidenceMutationReturn: unknown = null;
     let lastGetResidenceReturn: unknown = null;
 
     page.on('console', (message) => {
@@ -60,39 +60,58 @@ test.describe('Cycle de modération des résidences', () => {
 
     page.on('request', (request) => {
       const url = request.url();
-      if (request.method() === 'PATCH' && url.includes('/rest/v1/residences?')) {
+      const isResidenceMutation =
+        url.includes('/rest/v1/residences') &&
+        ['PATCH', 'POST', 'PUT'].includes(request.method());
+      if (isResidenceMutation) {
+        let payload: unknown;
         try {
-          lastResidenceUpdateRequest = request.postDataJSON();
+          payload = request.postDataJSON();
         } catch {
-          lastResidenceUpdateRequest = request.postData();
+          payload = request.postData();
         }
+        lastResidenceMutationRequest = {
+          method: request.method(),
+          url,
+          payload,
+        };
+        console.log(`[KAZA:E2E_HTTP] RESIDENCE_MUTATION_REQUEST ${JSON.stringify(lastResidenceMutationRequest)}`);
       }
     });
 
     page.on('response', async (response) => {
       const url = response.url();
       const request = response.request();
-      const isResidenceUpdate = request.method() === 'PATCH' && url.includes('/rest/v1/residences?');
+      const isResidenceMutation =
+        url.includes('/rest/v1/residences') &&
+        ['PATCH', 'POST', 'PUT'].includes(request.method());
       const isGetResidence = request.method() === 'POST' && url.includes('/rest/v1/rpc/get_residence');
-      if (!isResidenceUpdate && !isGetResidence) return;
+      if (!isResidenceMutation && !isGetResidence) return;
 
       try {
         const body = await response.json();
-        if (isResidenceUpdate) lastResidenceUpdateReturn = body;
+        if (isResidenceMutation) lastResidenceMutationReturn = {
+          method: request.method(),
+          url,
+          status: response.status(),
+          body,
+        };
         if (isGetResidence) lastGetResidenceReturn = body;
         console.log(
-          `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=${JSON.stringify(body)}`,
+          `[KAZA:E2E_HTTP] ${isResidenceMutation ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=${JSON.stringify(body)}`,
         );
       } catch (error) {
         const fallback = {
+          method: request.method(),
+          url,
           status: response.status(),
           text: await response.text().catch(() => '<read failed>'),
           error: error instanceof Error ? error.message : String(error),
         };
-        if (isResidenceUpdate) lastResidenceUpdateReturn = fallback;
+        if (isResidenceMutation) lastResidenceMutationReturn = fallback;
         if (isGetResidence) lastGetResidenceReturn = fallback;
         console.log(
-          `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} ${JSON.stringify(fallback)}`,
+          `[KAZA:E2E_HTTP] ${isResidenceMutation ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} ${JSON.stringify(fallback)}`,
         );
       }
     });
@@ -127,8 +146,8 @@ test.describe('Cycle de modération des résidences', () => {
     } catch (error) {
       throw new Error(
         `Photo absente après rechargement.
-UPDATE request=${JSON.stringify(lastResidenceUpdateRequest)}
-UPDATE return=${JSON.stringify(lastResidenceUpdateReturn)}
+UPDATE request=${JSON.stringify(lastResidenceMutationRequest)}
+UPDATE return=${JSON.stringify(lastResidenceMutationReturn)}
 GET_RESIDENCE return=${JSON.stringify(lastGetResidenceReturn)}
 Original error=${error instanceof Error ? error.message : String(error)}`,
       );
