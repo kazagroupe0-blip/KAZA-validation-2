@@ -37,7 +37,7 @@ function missingLandlordFields(profile: Profile | null): string[] {
 }
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const toast = useToast();
   const router = useRouter();
 
@@ -113,6 +113,8 @@ export default function ProfilePage() {
         };
         setSavedComplete(missingLandlordFields(candidate).length === 0);
       }
+      await refresh();
+
       // L’état local "savedComplete" pilote immédiatement l’UX après une
       // sauvegarde réussie. Le profil persisté sera relu lors de la prochaine
       // navigation/actualisation, sans bloquer cette page sur une seconde
