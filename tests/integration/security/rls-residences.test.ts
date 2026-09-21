@@ -350,6 +350,33 @@ describe('RLS: residences table', () => {
       });
     });
 
+    it('admin approval notifies the landlord', async () => {
+      const residenceId = await createDraft();
+      const landlord = getClient(landlordA);
+      await landlord.rpc('submit_residence_for_review', { p_residence_id: residenceId });
+
+      const moderated = await getClient(adminUser).rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+      expect(moderated.error).toBeNull();
+
+      const { data: notifications, error: notificationError } = await getClient(landlordA)
+        .from('notifications')
+        .select('type, title, body, data')
+        .eq('type', 'system')
+        .contains('data', { residence_id: residenceId, moderation_status: 'approved' })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      expect(notificationError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'system',
+        title: 'Bien vérifié',
+        data: { residence_id: residenceId, moderation_status: 'approved' },
+      });
+    });
+
     it('admin rejection persists the reason and allows resubmission', async () => {
       const residenceId = await createDraft();
       const landlord = getClient(landlordA);
@@ -362,6 +389,26 @@ describe('RLS: residences table', () => {
         p_reason: 'Ajoutez une photo claire de la façade.',
       });
       expect(rejected.error).toBeNull();
+
+      const { data: notifications, error: notificationError } = await landlord
+        .from('notifications')
+        .select('type, title, body, data')
+        .eq('type', 'system')
+        .contains('data', { residence_id: residenceId, moderation_status: 'rejected' })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      expect(notificationError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'system',
+        title: 'Annonce refusée',
+        body: expect.stringContaining('Ajoutez une photo claire de la façade.'),
+        data: {
+          residence_id: residenceId,
+          moderation_status: 'rejected',
+          reason: 'Ajoutez une photo claire de la façade.',
+        },
+      });
 
       const rejectedRow = await landlord
         .from('residences')
