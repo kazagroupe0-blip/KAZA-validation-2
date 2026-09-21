@@ -69,12 +69,19 @@ describe('RLS: residences table', () => {
   }
 
   describe('SELECT policies', () => {
-    it('published & verified residence is visible to all', async () => {
-      const residenceId = await createResidenceDirect(landlordA.user.id, { moderation_status: 'pending' });
+    it('published & verified residence is visible to an authenticated tenant', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        moderation_status: 'pending',
+        status: 'libre',
+      });
       // The moderation RPC accepts only residences explicitly waiting for review.
-      await supabaseAdmin.rpc('admin_moderate_residence', { p_residence_id: residenceId, p_action: 'approve' });
+      const moderated = await supabaseAdmin.rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+      expect(moderated.error).toBeNull();
 
-      const { data, error } = await supabaseAnon.from('residences').select('*').eq('id', residenceId).single();
+      const { data, error } = await getClient(tenantA).from('residences').select('*').eq('id', residenceId).single();
       expect(error).toBeNull();
       expect(data?.is_published).toBe(true);
       expect(data?.is_verified).toBe(true);
