@@ -39,6 +39,7 @@ export default function EditResidencePage() {
   const [status, setStatus] = useState<string>('libre');
   const [published, setPublished] = useState(false);
   const [moderationStatus, setModerationStatus] = useState<string>('draft');
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [leaseModal, setLeaseModal] = useState(false);
   const [tenants, setTenants] = useState<Profile[]>([]);
 
@@ -71,6 +72,7 @@ export default function EditResidencePage() {
   }
 
   async function togglePublish() {
+    setPublishError(null);
     try {
       if (moderationStatus === 'pending' || moderationStatus === 'approved') {
         await withdrawResidencePublication(id);
@@ -84,6 +86,7 @@ export default function EditResidencePage() {
         toast.success('Annonce envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
       }
     } catch (err) {
+      setPublishError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Action impossible');
       if (err instanceof ApiError && err.status === 409) {
         toast.error('Limite du plan gratuit', '1 bien en ligne — passez au Premium pour en publier plus.');
       } else {
@@ -144,6 +147,12 @@ export default function EditResidencePage() {
           </Button>
         </div>
       </div>
+
+      {publishError ? (
+        <p data-testid="publish-error" className="mt-3 rounded-kaza border border-kaza-danger/30 bg-kaza-danger/5 p-3 text-sm text-kaza-danger">
+          {publishError}
+        </p>
+      ) : null}
 
       <div className="mt-5 rounded-kaza border border-kaza-border bg-kaza-bg p-4" data-testid="moderation-status">
         <p className="text-xs font-semibold uppercase tracking-wide text-kaza-faint">Modération</p>
