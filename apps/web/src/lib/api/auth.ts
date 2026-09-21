@@ -177,7 +177,7 @@ export interface ProfileUpdateInput {
   bank_iban?: string | null;
 }
 
-export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
+export async function updateProfile(patch: ProfileUpdateInput): Promise<Profile> {
   const user = await requireUser().catch(() => null);
   if (!user) return;
 
@@ -237,9 +237,13 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
     payload.bank_iban = payload.bank_iban.replace(/\s+/g, '').trim() || null;
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .update(payload)
-    .eq('id', user.id);
+    .eq('id', user.id)
+    .select('*')
+    .single();
   if (error) throw normalizeError(error, 'Mise à jour impossible');
+  if (!data) throw new ApiError(500, 'Profil introuvable après la mise à jour');
+  return data;
 }
