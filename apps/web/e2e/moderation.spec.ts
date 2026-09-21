@@ -48,78 +48,6 @@ async function expectTitleVisibleInSearch(page: Page, title: string) {
 
 test.describe('Cycle de modération des résidences', () => {
   test('soumission → refus → resoumission → approbation → édition invalidante', async ({ page }) => {
-    let lastResidenceMutationRequest: unknown = null;
-    let lastResidenceMutationReturn: unknown = null;
-    let lastGetResidenceReturn: unknown = null;
-
-    page.on('console', (message) => {
-      if (message.text().includes('[KAZA:RESIDENCE_DIAGNOSTIC]')) {
-        console.log(`[KAZA:E2E_BROWSER] ${message.text()}`);
-      }
-    });
-
-    page.on('request', (request) => {
-      const url = request.url();
-      const isResidenceMutation =
-        url.includes('/rest/v1/residences') &&
-        ['PATCH', 'POST', 'PUT'].includes(request.method());
-      if (isResidenceMutation) {
-        let payload: unknown;
-        try {
-          payload = request.postDataJSON();
-        } catch {
-          payload = request.postData();
-        }
-        lastResidenceMutationRequest = {
-          method: request.method(),
-          url,
-          payload,
-        };
-        console.log(`[KAZA:E2E_HTTP] RESIDENCE_MUTATION_REQUEST ${JSON.stringify(lastResidenceMutationRequest)}`);
-      }
-    });
-
-    page.on('response', async (response) => {
-      const url = response.url();
-      const request = response.request();
-      const isResidenceMutation =
-        url.includes('/rest/v1/residences') &&
-        ['PATCH', 'POST', 'PUT'].includes(request.method());
-      const isGetResidence = request.method() === 'POST' && url.includes('/rest/v1/rpc/get_residence');
-      if (!isResidenceMutation && !isGetResidence) return;
-
-      try {
-        const body = await response.json();
-        if (isResidenceMutation) lastResidenceMutationReturn = {
-          method: request.method(),
-          url,
-          status: response.status(),
-          body,
-        };
-        if (isGetResidence) lastGetResidenceReturn = body;
-        console.log(
-          `[KAZA:E2E_HTTP] ${isResidenceMutation ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=${JSON.stringify(body)}`,
-        );
-      } catch (error) {
-        const fallback = {
-          method: request.method(),
-          url,
-          status: response.status(),
-          text: await response.text().catch(() => '<read failed>'),
-          error: error instanceof Error ? error.message : String(error),
-        };
-        if (isResidenceMutation) lastResidenceMutationReturn = fallback;
-        if (isGetResidence) lastGetResidenceReturn = fallback;
-        console.log(
-          `[KAZA:E2E_HTTP] ${isResidenceMutation ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} ${JSON.stringify(fallback)}`,
-        );
-      }
-    });
-    page.on('console', (message) => {
-      if (message.text().includes('[KAZA:RESIDENCE_DIAGNOSTIC]')) {
-        console.log(`[KAZA:E2E_BROWSER] ${message.text()}`);
-      }
-    });
     // 1. Le bailleur prépare une annonce brouillon.
     await login(page, LANDLORD_EMAIL, LANDLORD_PW);
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
@@ -141,17 +69,7 @@ test.describe('Cycle de modération des résidences', () => {
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
     // Vérifier que l'upload a survécu au save et à la navigation : la soumission
     // à la modération doit lire l'état réellement persisté en base.
-    try {
-      await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 });
-    } catch (error) {
-      throw new Error(
-        `Photo absente après rechargement.
-UPDATE request=${JSON.stringify(lastResidenceMutationRequest)}
-UPDATE return=${JSON.stringify(lastResidenceMutationReturn)}
-GET_RESIDENCE return=${JSON.stringify(lastGetResidenceReturn)}
-Original error=${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('publish-toggle').click();
     const moderationStatus = page.getByTestId('moderation-status');
     await expect(
