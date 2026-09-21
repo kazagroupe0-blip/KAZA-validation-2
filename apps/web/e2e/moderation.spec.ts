@@ -69,7 +69,14 @@ test.describe('Cycle de modération des résidences', () => {
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
     await page.getByTestId('publish-toggle').click();
     const moderationStatus = page.getByTestId('moderation-status');
-    await expect.poll(async () => moderationStatus.textContent(), { timeout: 5_000 }).toContain('En attente de modération');
+    await expect.poll(
+      async () => {
+        const status = (await moderationStatus.textContent()) ?? '';
+        const error = await page.getByTestId('publish-error').textContent().catch(() => null);
+        return error ? status + ' | erreur=' + error : status;
+      },
+      { timeout: 5_000 },
+    ).toContain('En attente de modération');
     await searchTitle(page, PENDING_TITLE);
 
     // 3. L'admin refuse avec un motif obligatoire.
