@@ -88,7 +88,6 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      console.log('[KAZA:PROFILE_DIAGNOSTIC] SAVE_START', JSON.stringify({ fullName, phone, businessName, momoProvider, momoNumber }));
       await updateProfile({
         full_name: fullName,
         phone,
@@ -103,7 +102,6 @@ export default function ProfilePage() {
             }
           : {}),
       });
-      console.log('[KAZA:PROFILE_DIAGNOSTIC] UPDATE_PROFILE_RESOLVED');
       if (user?.role === 'bailleur') {
         const candidate: Profile = {
           ...user,
@@ -116,18 +114,6 @@ export default function ProfilePage() {
           momo_number: momoNumber.replace(/\s+/g, '') || null,
         };
         const candidateMissing = missingLandlordFields(candidate);
-        console.log('[KAZA:PROFILE_DIAGNOSTIC] SAVE_RESOLVED', JSON.stringify({
-          role: user.role,
-          candidate: {
-            full_name: candidate.full_name,
-            phone: candidate.phone,
-            business_name: candidate.business_name,
-            momo_provider: candidate.momo_provider,
-            momo_number: candidate.momo_number,
-            email: candidate.email,
-          },
-          missing: candidateMissing,
-        }));
         setSavedComplete(candidateMissing.length === 0);
       }
       // Signaler immédiatement le succès de l'écriture. Le refresh du contexte
@@ -142,7 +128,7 @@ export default function ProfilePage() {
       );
       await refresh();
     } catch (err) {
-      console.error('[KAZA:PROFILE_DIAGNOSTIC] SAVE_ERROR', err);
+      console.error(err);
       toast.error(err instanceof ApiError ? err.message : 'Mise à jour impossible');
     } finally {
       setSaving(false);
