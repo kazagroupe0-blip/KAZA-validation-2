@@ -40,6 +40,7 @@ test.describe('Console administration', () => {
     await expect(page).toHaveURL(/\/explorer/);
 
     await page.goto('/admin');
-    await expect(page.getByText('Accès réservé à l’administration.')).toBeVisible();
+    await expect(page).toHaveURL(/\/forbidden$/);
+    await expect(page.getByRole('heading', { name: 'Accès interdit' })).toBeVisible();
   });
 });
