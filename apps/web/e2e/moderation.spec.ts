@@ -67,6 +67,9 @@ test.describe('Cycle de modération des résidences', () => {
 
     // 2. Soumission explicite à la modération.
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
+    // Vérifier que l'upload a survécu au save et à la navigation : la soumission
+    // à la modération doit lire l'état réellement persisté en base.
+    await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('publish-toggle').click();
     const moderationStatus = page.getByTestId('moderation-status');
     await expect.poll(
