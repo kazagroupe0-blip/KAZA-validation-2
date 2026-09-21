@@ -88,16 +88,6 @@ export default function EditResidencePage() {
           refreshed.moderation_status ??
           (refreshed.is_verified ? 'approved' : refreshed.is_published ? 'pending' : 'draft'),
         );
-        if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
-          console.log(
-            '[KAZA:RESIDENCE_DIAGNOSTIC] TOGGLE_SUBMIT_AUTHORITATIVE_STATE',
-            JSON.stringify({
-              is_published: refreshed.is_published,
-              is_verified: refreshed.is_verified,
-              moderation_status: refreshed.moderation_status,
-            }),
-          );
-        }
         toast.success('Annonce envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
       }
     } catch (err) {
@@ -116,21 +106,6 @@ export default function EditResidencePage() {
     moderationStatus === 'rejected' ? 'Refusée — correction requise' :
     'Brouillon';
 
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS !== '1') return;
-    queueMicrotask(() => {
-      const rendered = document.querySelector('[data-testid="moderation-status"]')?.textContent ?? null;
-      console.log(
-        '[KAZA:RESIDENCE_DIAGNOSTIC] MODERATION_UI_RENDER',
-        JSON.stringify({
-          moderationStatus,
-          moderationLabel,
-          residenceModerationStatus: residence?.moderation_status ?? null,
-          rendered,
-        }),
-      );
-    });
-  }, [moderationStatus, moderationLabel, residence?.moderation_status]);
 
   if (loading) {
     return (
