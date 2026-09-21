@@ -1140,6 +1140,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      list_admin_residences: {
+        Args: { p_limit?: number; p_offset?: number }
+        Returns: Json[]
+      }
       admin_unpublish_residence: {
         Args: { p_residence_id: string }
         Returns: undefined
