@@ -113,12 +113,9 @@ export default function ProfilePage() {
         };
         setSavedComplete(missingLandlordFields(candidate).length === 0);
       }
-      await refresh();
-
-      // L’état local "savedComplete" pilote immédiatement l’UX après une
-      // sauvegarde réussie. Le profil persisté sera relu lors de la prochaine
-      // navigation/actualisation, sans bloquer cette page sur une seconde
-      // lecture réseau susceptible de perdre la session pendant le test E2E.
+      // Signaler immédiatement le succès de l'écriture. Le refresh du contexte
+      // d'authentification reste utile pour synchroniser le reste de l'application,
+      // mais ne doit pas retarder ni masquer le feedback utilisateur.
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
         user?.role === 'bailleur' ? 'Profil enregistré' : 'Profil mis à jour',
@@ -126,6 +123,7 @@ export default function ProfilePage() {
           ? 'Le statut de complétude a été recalculé.'
           : undefined,
       );
+      await refresh();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Mise à jour impossible');
     } finally {
