@@ -122,6 +122,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
 
     setUploading(true);
     const bucket = supabase.storage.from('residence-photos');
+    const uploadedUrls: string[] = [];
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -143,9 +144,12 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
             toast.error(`Échec de l'upload de ${file.name}`);
             return;
           }
-          setPhotos((p) => [...p, bucket.getPublicUrl(path).data.publicUrl]);
+          uploadedUrls.push(bucket.getPublicUrl(path).data.publicUrl);
         })
       );
+    }
+    if (uploadedUrls.length > 0) {
+      setPhotos((prev) => [...prev, ...uploadedUrls]);
     }
     setUploading(false);
   }
@@ -274,7 +278,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
       </div>
       <Input label="Adresse précise (facultatif)" value={form.address} onChange={set('address')} hint="Géolocalisation automatique depuis ville + zone (OpenStreetMap)." />
 
-      <Button type="submit" loading={saving} size="lg" className="w-full sm:w-auto">
+      <Button type="submit" loading={saving} disabled={uploading} size="lg" className="w-full sm:w-auto">
         {existing ? 'Enregistrer les modifications' : 'Créer le bien'}
       </Button>
     </form>
