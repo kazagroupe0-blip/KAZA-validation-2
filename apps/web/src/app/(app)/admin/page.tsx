@@ -152,13 +152,14 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {pendingModeration.length > 0 && (
-        <section className="mt-8" aria-labelledby="moderation">
+      <section className="mt-8" aria-labelledby="moderation">
           <h2 id="moderation" className="font-display text-lg font-semibold text-kaza-text">
             Annonces en attente <span className="text-kaza-warning">({pendingModeration.length})</span>
           </h2>
           <ul className="mt-3 space-y-2">
-            {pendingModeration.map((r) => (
+            {pendingModeration.length === 0 ? (
+              <li className="kaza-card px-4 py-5 text-sm text-kaza-faint">Aucune annonce en attente.</li>
+            ) : pendingModeration.map((r) => (
               <li key={r.id} className="kaza-card flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-kaza-text">{r.title}</p>
@@ -188,7 +189,6 @@ export default function AdminPage() {
             ))}
           </ul>
         </section>
-      )}
 
       {payouts.some((p) => p.status === 'manual_review') && (
         <section className="mt-8" aria-labelledby="payouts-review">
