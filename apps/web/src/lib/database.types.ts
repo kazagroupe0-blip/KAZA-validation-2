@@ -1490,10 +1490,6 @@ export type Database = {
       populate_geometry_columns:
         | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
         | { Args: { use_typmod?: boolean }; Returns: string }
-      propose_visit: {
-        Args: { p_conversation_id: string; p_slots: Json }
-        Returns: string[]
-      }
       postgis_constraint_dims: {
         Args: { geomcolumn: string; geomschema: string; geomtable: string }
         Returns: number
@@ -1531,6 +1527,10 @@ export type Database = {
       }
       postgis_version: { Args: never; Returns: string }
       postgis_wagyu_version: { Args: never; Returns: string }
+      propose_visit: {
+        Args: { p_conversation_id: string; p_slots: Json }
+        Returns: string[]
+      }
       report_cash_payment: {
         Args: {
           p_amount: number
