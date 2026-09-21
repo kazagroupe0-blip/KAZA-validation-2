@@ -4,6 +4,7 @@ const TENANT_EMAIL = process.env.E2E_TENANT_EMAIL ?? 'locataire.demo@kaza.bj';
 const TENANT_PW = process.env.E2E_TENANT_PW ?? 'KazaDemo2026!';
 const LANDLORD_EMAIL = process.env.E2E_LANDLORD_EMAIL ?? 'bailleur.demo@kaza.bj';
 const LANDLORD_PW = process.env.E2E_LANDLORD_PW ?? 'KazaDemo2026!';
+const CHAT_RESIDENCE_ID = '00000000-0000-0000-0000-000000000103';
 
 async function login(page: Page, email: string, password: string) {
   await page.goto('/login');
@@ -30,9 +31,8 @@ test.describe('Messagerie de bout en bout', () => {
     try {
       // Le locataire ouvre réellement une conversation depuis une annonce publique.
       await login(tenant, TENANT_EMAIL, TENANT_PW);
-      await tenant.goto('/explorer');
-      await expect(tenant.locator('article').first()).toBeVisible();
-      await tenant.locator('article').first().click();
+      await tenant.goto(`/residences/${CHAT_RESIDENCE_ID}`);
+      await expect(tenant.getByTestId('contact-owner')).toBeVisible({ timeout: 15_000 });
       await tenant.getByTestId('contact-owner').click();
       await expect(tenant).toHaveURL(/\/chat\//);
       const realtimeStatus = tenant.getByTestId('realtime-status');
