@@ -75,7 +75,7 @@ describe('RLS: residences table', () => {
         status: 'libre',
       });
       // The moderation RPC accepts only residences explicitly waiting for review.
-      const moderated = await supabaseAdmin.rpc('admin_moderate_residence', {
+      const moderated = await getClient(adminUser).rpc('admin_moderate_residence', {
         p_residence_id: residenceId,
         p_action: 'approve',
       });
