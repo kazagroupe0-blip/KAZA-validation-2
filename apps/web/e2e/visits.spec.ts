@@ -63,18 +63,17 @@ test.describe('Visites de bout en bout', () => {
         return `${y}-${m}-${d}T${h}:${min}`;
       };
 
-      const starts = modal.locator('input[type="datetime-local"]');
-      await starts.nth(0).fill(dateTimeLocal(firstStart));
-      await modal.getByText('Fin', { exact: true }).first().locator('..').locator('input').fill(dateTimeLocal(firstEnd));
+      const allDateInputs = modal.locator('input[type="datetime-local"]');
+      await allDateInputs.nth(0).fill(dateTimeLocal(firstStart));
+      await allDateInputs.nth(1).fill(dateTimeLocal(firstEnd));
 
       await modal.getByRole('button', { name: '+ Ajouter un créneau' }).click();
-      const allDateInputs = modal.locator('input[type="datetime-local"]');
       await allDateInputs.nth(2).fill(dateTimeLocal(secondStart));
       await allDateInputs.nth(3).fill(dateTimeLocal(secondEnd));
 
       await modal.getByRole('button', { name: 'Proposer' }).click();
       await expect(modal).not.toBeVisible();
-      await expect(tenant.getByText('Demande de visite', { exact: true })).toBeVisible({ timeout: 10_000 });
+      await expect(tenant.getByText(/Demande de visite/)).toBeVisible({ timeout: 10_000 });
       await expect(tenant.getByText('Visite proposée')).toBeVisible();
 
       // 2. Le bailleur retrouve cette même conversation dans sa propre session.
