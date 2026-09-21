@@ -96,7 +96,12 @@ test.describe('Cycle de modération des résidences', () => {
     await expect(page.getByTestId('moderation-status')).toContainText('Ajoutez une photo plus claire de la façade.');
 
     await page.getByTestId('publish-toggle').click();
-    await expect(page.getByTestId('moderation-status')).toContainText('En attente de modération');
+    try {
+      await expect(page.getByTestId('moderation-status')).toContainText('En attente de modération');
+    } catch (error) {
+      const detail = await page.getByTestId('publish-error').textContent().catch(() => null);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\nSoumission : ${detail || 'aucune erreur affichée'}`);
+    }
     await searchTitle(page, PENDING_TITLE);
 
     // 6. L'admin approuve. La résidence devient alors réellement publique.
