@@ -172,9 +172,23 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
       surface: form.surface ? Number(form.surface) : null,
       photos,
     };
+    if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
+      console.log(
+        '[KAZA:RESIDENCE_DIAGNOSTIC] FORM_SUBMIT',
+        JSON.stringify({
+          existingId: existing?.id ?? null,
+          title: payload.title,
+          photos: payload.photos,
+          photoCount: payload.photos.length,
+        }),
+      );
+    }
     try {
       if (existing) {
         await updateResidence(existing.id, payload);
+        if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
+          console.log('[KAZA:RESIDENCE_DIAGNOSTIC] FORM_UPDATE_RESOLVED', existing.id);
+        }
         toast.success('Bien mis à jour');
       } else {
         const created = await createResidence(payload);
