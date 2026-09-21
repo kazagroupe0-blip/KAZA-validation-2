@@ -25,6 +25,18 @@ test.describe('Messagerie de bout en bout', () => {
     const tenant = await tenantContext.newPage();
     const landlord = await landlordContext.newPage();
 
+    tenant.on('websocket', (ws) => {
+      console.log(`[KAZA:WS] opened ${ws.url()}`);
+      ws.on('framesent', (frame) => console.log(`[KAZA:WS] sent frame bytes=${frame.length}`));
+      ws.on('framereceived', (frame) => console.log(`[KAZA:WS] received frame bytes=${frame.length}`));
+      ws.on('close', () => console.log('[KAZA:WS] closed'));
+      ws.on('socketerror', (error) => console.log(`[KAZA:WS] socketerror ${error}`));
+    });
+    tenant.on('pageerror', (error) => console.log(`[KAZA:PAGEERROR] ${error.message}`));
+    tenant.on('console', (message) => {
+      if (message.type() === 'error') console.log(`[KAZA:CONSOLE] ${message.text()}`);
+    });
+
     const tenantMessage = `Bonjour depuis E2E ${Date.now()}`;
     const landlordMessage = `Réponse bailleur E2E ${Date.now()}`;
 
