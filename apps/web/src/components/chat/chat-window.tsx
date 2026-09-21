@@ -58,26 +58,40 @@ export function ChatWindow() {
     void load();
   }, [load]);
 
-  // note : temps réel Supabase — les messages arrivent sans rechargement
+  // note : temps réel Supabase — les messages arrivent sans rechargement.
+  // Le token courant est explicitement transmis à Realtime afin que la
+  // session SSR/mémoire soit également utilisée pour l'autorisation RLS.
   useEffect(() => {
-    const channel = supabase
-      .channel(`messages:${id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` },
-        (payload: RealtimePostgresInsertPayload<Message>) => {
-          const m = payload.new as Message;
-          setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
-          if (m.sender_id !== user?.id) {
-            void markConversationRead(id).catch(() => undefined);
-          }
-        },
-      )
-      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
-        setIsConnected(status === 'SUBSCRIBED');
-      });
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+    setIsConnected(false);
+
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || cancelled) return;
+
+      supabase.realtime.setAuth(session.access_token);
+      channel = supabase
+        .channel(`messages:${id}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` },
+          (payload: RealtimePostgresInsertPayload<Message>) => {
+            const m = payload.new as Message;
+            setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+            if (m.sender_id !== user?.id) {
+              void markConversationRead(id).catch(() => undefined);
+            }
+          },
+        )
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
+          setIsConnected(status === 'SUBSCRIBED');
+        });
+    })();
+
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [id, user?.id]);
 
@@ -220,7 +234,12 @@ export function ChatWindow() {
           </p>
           <p className="truncate text-xs text-kaza-faint">
             {conversation?.residence?.title ?? 'Chat privé sécurisé'}{conversation?.residence ? ` · ${formatXof(conversation.residence.price_monthly)}/mois` : ' · pièces jointes acceptées'}
-            <span className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`} title={isConnected ? 'Connecté' : 'Déconnecté'} />
+            <span
+              data-testid="realtime-status"
+              data-state={isConnected ? 'connected' : 'disconnected'}
+              className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`}
+              title={isConnected ? 'Connecté' : 'Déconnecté'}
+            />
           </p>
         </div>
         {isLandlord && (
