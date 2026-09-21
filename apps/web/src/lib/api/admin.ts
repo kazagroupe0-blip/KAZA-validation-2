@@ -59,6 +59,12 @@ export async function adminModerateResidence(id: string, action: 'approve' | 're
     p_action: action,
     p_reason: reason,
   });
+  if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
+    console.log(
+      '[KAZA:RESIDENCE_DIAGNOSTIC] ADMIN_MODERATION_RPC',
+      JSON.stringify({ id, action, rpcError: error ?? null }),
+    );
+  }
   if (error) throw normalizeError(error, 'Action impossible');
   await logAdminAction(`moderate_residence_${action}`, 'residence', id, null, { reason });
 }
