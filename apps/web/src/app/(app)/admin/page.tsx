@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Building2, Wallet, FileText, CheckCircle2, Crown, Shield, RefreshCw } from 'lucide-react';
+import { Users, Building2, Wallet, FileText, CheckCircle2, Crown, Shield, RefreshCw, Search, History } from 'lucide-react';
 import {
   adminStats,
   adminListResidences,
@@ -12,6 +12,9 @@ import {
   adminListLandlordPayouts,
   adminRetryLandlordPayout,
 } from '@/lib/supabase-api';
+import { listAdminAuditLogs } from '@/lib/api/admin';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth-context';
 import type { LandlordPayout, Profile, ResidenceWithRelations } from '@/lib/types';
 import { formatXof } from '@/lib/format';
@@ -35,21 +38,38 @@ export default function AdminPage() {
   const [residences, setResidences] = useState<ResidenceWithRelations[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [payouts, setPayouts] = useState<LandlordPayout[]>([]);
+  const [auditLogs, setAuditLogs] = useState<Array<{
+    id: string;
+    admin_id: string;
+    action: string;
+    target_type: string;
+    target_id: string | null;
+    old_value: unknown;
+    new_value: unknown;
+    metadata: unknown;
+    created_at: string;
+  }>>([]);
+  const [residenceQuery, setResidenceQuery] = useState('');
+  const [residenceStatus, setResidenceStatus] = useState('all');
+  const [userQuery, setUserQuery] = useState('');
+  const [userRole, setUserRole] = useState('all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     try {
-      const [s, r, u, p] = await Promise.all([
+      const [s, r, u, p, a] = await Promise.all([
         adminStats(),
-        adminListResidences(30),
-        adminListUsers(30),
-        adminListLandlordPayouts(30),
+        adminListResidences(100),
+        adminListUsers(100),
+        adminListLandlordPayouts(50),
+        listAdminAuditLogs({ limit: 50 }),
       ]);
       setStats(s);
       setResidences(r);
       setUsers(u);
       setPayouts(p);
+      setAuditLogs(a);
     } catch (err) {
       apiToast(toast, err, 'Chargement de l\u2019administration impossible');
     } finally {
@@ -95,6 +115,18 @@ export default function AdminPage() {
   ];
 
   const pendingModeration = residences.filter((r) => r.moderation_status === 'pending');
+  const normalizedResidenceQuery = residenceQuery.trim().toLocaleLowerCase();
+  const filteredResidences = residences.filter((r) => {
+    const haystack = [r.title, r.city, r.zone, r.owner?.full_name].filter(Boolean).join(' ').toLocaleLowerCase();
+    return (residenceStatus === 'all' || r.moderation_status === residenceStatus)
+      && (!normalizedResidenceQuery || haystack.includes(normalizedResidenceQuery));
+  });
+  const normalizedUserQuery = userQuery.trim().toLocaleLowerCase();
+  const filteredUsers = users.filter((u) => {
+    const haystack = [u.full_name, u.email, u.phone].filter(Boolean).join(' ').toLocaleLowerCase();
+    return (userRole === 'all' || u.role === userRole)
+      && (!normalizedUserQuery || haystack.includes(normalizedUserQuery));
+  });
 
   return (
     <div>
@@ -191,9 +223,23 @@ export default function AdminPage() {
       <div className="mt-10 grid gap-8 lg:grid-cols-2">
         {/* Utilisateurs */}
         <section aria-labelledby="users">
-          <h2 id="users" className="font-display text-lg font-semibold text-kaza-text">Utilisateurs</h2>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 id="users" className="font-display text-lg font-semibold text-kaza-text">Utilisateurs</h2>
+              <p className="mt-1 text-xs text-kaza-faint">{filteredUsers.length} résultat(s) sur {users.length} chargés.</p>
+            </div>
+            <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(220px,1fr)_150px]">
+              <Input aria-label="Rechercher un utilisateur" value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder="Nom, email ou téléphone" />
+              <Select aria-label="Filtrer par rôle" value={userRole} onChange={(e) => setUserRole(e.target.value)} options={[
+                { value: 'all', label: 'Tous les rôles' },
+                { value: 'locataire', label: 'Locataires' },
+                { value: 'bailleur', label: 'Bailleurs' },
+                { value: 'admin', label: 'Administrateurs' },
+              ]} />
+            </div>
+          </div>
           <ul className="mt-3 space-y-2">
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <li key={u.id} className="kaza-card flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-kaza-text">{u.full_name}</p>
@@ -221,9 +267,24 @@ export default function AdminPage() {
 
         {/* Biens */}
         <section aria-labelledby="residences">
-          <h2 id="residences" className="font-display text-lg font-semibold text-kaza-text">Biens récents</h2>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 id="residences" className="font-display text-lg font-semibold text-kaza-text">Biens récents</h2>
+              <p className="mt-1 text-xs text-kaza-faint">{filteredResidences.length} résultat(s) sur {residences.length} chargés.</p>
+            </div>
+            <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(220px,1fr)_170px]">
+              <Input aria-label="Rechercher une résidence" value={residenceQuery} onChange={(e) => setResidenceQuery(e.target.value)} placeholder="Titre, ville, zone ou bailleur" />
+              <Select aria-label="Filtrer le statut de modération" value={residenceStatus} onChange={(e) => setResidenceStatus(e.target.value)} options={[
+                { value: 'all', label: 'Tous les statuts' },
+                { value: 'pending', label: 'En attente' },
+                { value: 'approved', label: 'Approuvées' },
+                { value: 'rejected', label: 'Refusées' },
+                { value: 'draft', label: 'Brouillons' },
+              ]} />
+            </div>
+          </div>
           <ul className="mt-3 space-y-2">
-            {residences.slice(0, 15).map((r) => (
+            {filteredResidences.slice(0, 30).map((r) => (
               <li key={r.id} className="kaza-card flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-kaza-text">{r.title}</p>
@@ -237,6 +298,33 @@ export default function AdminPage() {
           </ul>
         </section>
       </div>
+
+      <section className="mt-10" aria-labelledby="audit">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="audit" className="font-display text-lg font-semibold text-kaza-text">Journal d’administration</h2>
+            <p className="mt-1 text-xs text-kaza-faint">Les 50 dernières actions enregistrées.</p>
+          </div>
+          <History className="h-5 w-5 text-kaza-muted" aria-hidden />
+        </div>
+        <ul className="mt-3 space-y-2">
+          {auditLogs.length === 0 ? (
+            <li className="kaza-card px-4 py-5 text-sm text-kaza-faint">Aucune action enregistrée.</li>
+          ) : (
+            auditLogs.map((log) => (
+              <li key={log.id} className="kaza-card flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-kaza-text">{log.action}</p>
+                  <p className="text-xs text-kaza-faint">
+                    {log.target_type}{log.target_id ? " · " + log.target_id : ""} · {new Date(log.created_at).toLocaleString('fr-FR')}
+                  </p>
+                </div>
+                <Search className="mt-0.5 h-4 w-4 shrink-0 text-kaza-faint" aria-hidden />
+              </li>
+            ))
+          )}
+        </ul>
+      </section>
     </div>
   );
 }
