@@ -50,6 +50,8 @@ export function ChatWindow() {
   const [visitModal, setVisitModal] = useState(false);
   const [proposeModal, setProposeModal] = useState(false);
   const [isLandlord, setIsLandlord] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -436,10 +438,10 @@ export function ChatWindow() {
       supabase.realtime.setAuth(accessToken);
 
       channel = supabase
-        .channel(\`messages:\${id}\`)
+        .channel(`messages:\${id}`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages', filter: \`conversation_id=eq.\${id}\` },
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.\${id}` },
           (payload: RealtimePostgresInsertPayload<Message>) => {
             const m = payload.new as Message;
             setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
@@ -495,9 +497,7 @@ export function ChatWindow() {
   // URLs signées pour les pièces jointes (bucket privé) — mises en cache
   // Résolues en parallèle par lots de 6 (pas de round-trip séquentiel).
   const [signedAttachments, setSignedAttachments] = useState<Record<string, string>>({});
-  const [isConnected, setIsConnected] = useState(true);
-  const [realtimeError, setRealtimeError] = useState<string | null>(null);
-  useEffect(() => {
+    useEffect(() => {
     let cancelled = false;
     void (async () => {
       const todo: string[] = [];
