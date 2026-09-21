@@ -23,7 +23,7 @@ test.describe('Console administration', () => {
 
     await page.getByLabel('Filtrer par rôle').selectOption('bailleur');
     await page.getByLabel('Rechercher un utilisateur').fill('bailleur');
-    await expect(page.getByText(/résultat\(s\) sur/)).toBeVisible();
+    await expect(page.getByText(/résultat\(s\) sur/).first()).toBeVisible();
 
     await page.getByLabel('Filtrer le statut de modération').selectOption('pending');
     await expect(page.getByRole('heading', { name: /File de modération/ })).toBeVisible();
