@@ -81,7 +81,7 @@ export default function EditResidencePage() {
         toast.success('Annonce retirée', 'Elle n’est plus visible dans la recherche.');
       } else {
         await submitResidenceForReview(id);
-        setPublished(true);
+        setPublished(false);
         setModerationStatus('pending');
         toast.success('Annonce envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
       }
