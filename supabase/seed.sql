@@ -69,7 +69,7 @@ where u.email in ('locataire.demo@kaza.bj', 'bailleur.demo@kaza.bj', 'admin@kaza
 
 -- Profils (le trigger handle_new_user crée un profil visiteur sur chaque insert
 -- auth.users, donc on force le rôle ici avec un UPDATE sur conflit d'id)
-insert into public.profiles (id, email, phone, full_name, role, consent_apdp)
+insert into public.profiles (id, email, phone, full_name, role, consent_apdp, is_premium)
 values
   ('00000000-0000-0000-0000-000000000001', 'locataire.demo@kaza.bj', '+2290100000001', 'Locataire Démo', 'locataire', true, false),
   ('00000000-0000-0000-0000-000000000002', 'bailleur.demo@kaza.bj', '+2290100000002', 'Bailleur Démo', 'bailleur', true, true),
