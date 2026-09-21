@@ -72,6 +72,7 @@ describe('Visits: table & RLS', () => {
       zone: 'Haie Vive',
       is_published: true,
       is_verified: true,
+      moderation_status: 'pending',
     }).select('id').single();
     if (error) throw error;
     return data.id;
