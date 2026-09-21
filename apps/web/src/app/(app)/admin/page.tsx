@@ -20,7 +20,6 @@ import type { LandlordPayout, Profile, ResidenceWithRelations } from '@/lib/type
 import { formatXof } from '@/lib/format';
 import { apiToast } from '@/lib/api-toast';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 
