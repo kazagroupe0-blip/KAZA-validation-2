@@ -68,7 +68,8 @@ test.describe('Cycle de modération des résidences', () => {
     // 2. Soumission explicite à la modération.
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
     await page.getByTestId('publish-toggle').click();
-    await expect(page.getByTestId('moderation-status')).toContainText('En attente de modération');
+    const moderationStatus = page.getByTestId('moderation-status');
+    await expect.poll(async () => moderationStatus.textContent(), { timeout: 5_000 }).toContain('En attente de modération');
     await searchTitle(page, PENDING_TITLE);
 
     // 3. L'admin refuse avec un motif obligatoire.
