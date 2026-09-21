@@ -138,6 +138,7 @@ export default function ProfilePage() {
       );
       await refresh();
     } catch (err) {
+      console.error('[KAZA:PROFILE_DIAGNOSTIC] SAVE_ERROR', err);
       toast.error(err instanceof ApiError ? err.message : 'Mise à jour impossible');
     } finally {
       setSaving(false);
