@@ -26,7 +26,7 @@ test.describe('Console administration', () => {
     await expect(page.getByText(/résultat\(s\) sur/).first()).toBeVisible();
 
     await page.getByLabel('Filtrer le statut de modération').selectOption('pending');
-    await expect(page.getByRole('heading', { name: /File de modération/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Annonces en attente/ })).toBeVisible();
   });
 
   test('un non-admin n’accède pas à la console', async ({ page }) => {
