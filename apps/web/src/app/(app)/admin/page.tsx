@@ -57,21 +57,31 @@ export default function AdminPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
+    setLoading(true);
+    const [statsResult, residencesResult, usersResult, payoutsResult] = await Promise.allSettled([
+      adminStats(),
+      adminListResidences(100),
+      adminListUsers(100),
+      adminListLandlordPayouts(50),
+    ]);
+
+    if (statsResult.status === 'fulfilled') setStats(statsResult.value);
+    if (residencesResult.status === 'fulfilled') setResidences(residencesResult.value);
+    if (usersResult.status === 'fulfilled') setUsers(usersResult.value);
+    if (payoutsResult.status === 'fulfilled') setPayouts(payoutsResult.value);
+
+    const coreError = [statsResult, residencesResult, usersResult, payoutsResult]
+      .find((result) => result.status === 'rejected');
+    if (coreError?.status === 'rejected') {
+      apiToast(toast, coreError.reason, 'Chargement partiel de l’administration');
+    }
+
     try {
-      const [s, r, u, p, a] = await Promise.all([
-        adminStats(),
-        adminListResidences(100),
-        adminListUsers(100),
-        adminListLandlordPayouts(50),
-        listAdminAuditLogs({ limit: 50 }),
-      ]);
-      setStats(s);
-      setResidences(r);
-      setUsers(u);
-      setPayouts(p);
-      setAuditLogs(a);
+      const audit = await listAdminAuditLogs({ limit: 50 });
+      setAuditLogs(audit);
     } catch (err) {
-      apiToast(toast, err, 'Chargement de l\u2019administration impossible');
+      setAuditLogs([]);
+      apiToast(toast, err, 'Journal d’administration indisponible');
     } finally {
       setLoading(false);
     }
@@ -97,21 +107,18 @@ export default function AdminPage() {
     return <p className="py-16 text-center text-sm text-kaza-faint">Accès réservé à l’administration.</p>;
   }
 
-  if (loading || !stats) {
-    return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-28" />
-        ))}
-      </div>
-    );
-  }
+  const displayStats: Stats = stats ?? {
+    users: { total: 0, by_role: {} },
+    residences: { total: 0, by_status: {} },
+    leases: { total: 0 },
+    payments: { confirmed_count: 0, total_collected_xof: 0 },
+  };
 
   const cards = [
-    { icon: Users, label: 'Utilisateurs', value: String(stats.users.total), sub: `locataires ${stats.users.by_role['locataire'] ?? 0} · bailleurs ${stats.users.by_role['bailleur'] ?? 0}` },
-    { icon: Building2, label: 'Biens', value: String(stats.residences.total), sub: `libres ${stats.residences.by_status['libre'] ?? 0} · occupés ${stats.residences.by_status['occupee'] ?? 0}` },
-    { icon: Wallet, label: 'Collecté', value: formatXof(stats.payments.total_collected_xof), sub: `${stats.payments.confirmed_count} paiements confirmés` },
-    { icon: FileText, label: 'Baux actifs', value: String(stats.leases.total), sub: 'en cours de gestion' },
+    { icon: Users, label: 'Utilisateurs', value: loading ? '…' : String(displayStats.users.total), sub: `locataires ${displayStats.users.by_role['locataire'] ?? 0} · bailleurs ${displayStats.users.by_role['bailleur'] ?? 0}` },
+    { icon: Building2, label: 'Biens', value: loading ? '…' : String(displayStats.residences.total), sub: `libres ${displayStats.residences.by_status['libre'] ?? 0} · occupés ${displayStats.residences.by_status['occupee'] ?? 0}` },
+    { icon: Wallet, label: 'Collecté', value: loading ? '…' : formatXof(displayStats.payments.total_collected_xof), sub: `${displayStats.payments.confirmed_count} paiements confirmés` },
+    { icon: FileText, label: 'Baux actifs', value: loading ? '…' : String(displayStats.leases.total), sub: 'en cours de gestion' },
   ];
 
   const pendingModeration = residences.filter((r) => r.moderation_status === 'pending');
