@@ -215,7 +215,7 @@ Original error=${error instanceof Error ? error.message : String(error)}`,
 
     await page.getByLabel('Titre').fill(EDITED_TITLE);
     await page.getByRole('button', { name: 'Enregistrer les modifications' }).click();
-    await expect(page).toHaveURL(/\/landlord/);
+    await expect(page).toHaveURL(/\/landlord\/dashboard\/?$/);
 
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
     await expect(page.getByTestId('moderation-status')).toContainText('Brouillon');
