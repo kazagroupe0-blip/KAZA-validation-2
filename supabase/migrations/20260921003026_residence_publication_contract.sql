@@ -221,7 +221,3 @@ grant execute on function public.get_residence(uuid) to authenticated;
 
 revoke execute on function public.open_conversation(uuid) from public, anon;
 grant execute on function public.open_conversation(uuid) to authenticated;
-
-
--- Final ACL: moderation is invoked by the authenticated admin console.
-grant execute on function public.admin_moderate_residence(uuid, text, text) to authenticated;
