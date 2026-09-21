@@ -37,7 +37,7 @@ function missingLandlordFields(profile: Profile | null): string[] {
 }
 
 export default function ProfilePage() {
-  const { user, refresh } = useAuth();
+  const { user, setUserProfile } = useAuth();
   const toast = useToast();
   const router = useRouter();
 
@@ -88,7 +88,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await updateProfile({
+      const updatedProfile = await updateProfile({
         full_name: fullName,
         phone,
         ...(user?.role === 'bailleur'
@@ -102,23 +102,9 @@ export default function ProfilePage() {
             }
           : {}),
       });
-      if (user?.role === 'bailleur') {
-        const candidate: Profile = {
-          ...user,
-          full_name: fullName.trim(),
-          phone: /^\d{10}$/.test(phone.replace(/\s+/g, ''))
-            ? `+229${phone.replace(/\s+/g, '')}`
-            : phone.replace(/\s+/g, ''),
-          business_name: businessName.trim() || null,
-          momo_provider: momoProvider || null,
-          momo_number: momoNumber.replace(/\s+/g, '') || null,
-        };
-        const candidateMissing = missingLandlordFields(candidate);
-        setSavedComplete(candidateMissing.length === 0);
-      }
-      // Signaler immédiatement le succès de l'écriture. Le refresh du contexte
-      // d'authentification reste utile pour synchroniser le reste de l'application,
-      // mais ne doit pas retarder ni masquer le feedback utilisateur.
+      setUserProfile(updatedProfile);
+      setSavedComplete(missingLandlordFields(updatedProfile).length === 0);
+      // L'état du contexte vient maintenant directement de la ligne sauvegardée.
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
         user?.role === 'bailleur' ? 'Profil enregistré' : 'Profil mis à jour',
@@ -126,7 +112,6 @@ export default function ProfilePage() {
           ? 'Le statut de complétude a été recalculé.'
           : undefined,
       );
-      await refresh();
     } catch (err) {
       console.error(err);
       toast.error(err instanceof ApiError ? err.message : 'Mise à jour impossible');
