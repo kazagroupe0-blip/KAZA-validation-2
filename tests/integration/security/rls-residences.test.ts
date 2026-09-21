@@ -362,7 +362,7 @@ describe('RLS: residences table', () => {
       const landlord = getClient(landlordA);
       await landlord.rpc('submit_residence_for_review', { p_residence_id: residenceId });
 
-      const moderated = await getClient(adminUser).rpc('admin_moderate_residence', {
+      const moderated = await supabaseAdmin.rpc('admin_moderate_residence', {
         p_residence_id: residenceId,
         p_action: 'approve',
       });
