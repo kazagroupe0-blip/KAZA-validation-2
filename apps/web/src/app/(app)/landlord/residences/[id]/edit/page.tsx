@@ -116,6 +116,22 @@ export default function EditResidencePage() {
     moderationStatus === 'rejected' ? 'Refusée — correction requise' :
     'Brouillon';
 
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS !== '1') return;
+    queueMicrotask(() => {
+      const rendered = document.querySelector('[data-testid="moderation-status"]')?.textContent ?? null;
+      console.log(
+        '[KAZA:RESIDENCE_DIAGNOSTIC] MODERATION_UI_RENDER',
+        JSON.stringify({
+          moderationStatus,
+          moderationLabel,
+          residenceModerationStatus: residence.moderation_status ?? null,
+          rendered,
+        }),
+      );
+    });
+  }, [moderationStatus, moderationLabel, residence.moderation_status]);
+
   if (loading) {
     return (
       <div className="space-y-4">
