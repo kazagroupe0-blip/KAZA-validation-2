@@ -111,7 +111,20 @@ export default function ProfilePage() {
           momo_provider: momoProvider || null,
           momo_number: momoNumber.replace(/\s+/g, '') || null,
         };
-        setSavedComplete(missingLandlordFields(candidate).length === 0);
+        const candidateMissing = missingLandlordFields(candidate);
+        console.log('[KAZA:PROFILE_DIAGNOSTIC] SAVE_RESOLVED', JSON.stringify({
+          role: user.role,
+          candidate: {
+            full_name: candidate.full_name,
+            phone: candidate.phone,
+            business_name: candidate.business_name,
+            momo_provider: candidate.momo_provider,
+            momo_number: candidate.momo_number,
+            email: candidate.email,
+          },
+          missing: candidateMissing,
+        }));
+        setSavedComplete(candidateMissing.length === 0);
       }
       // Signaler immédiatement le succès de l'écriture. Le refresh du contexte
       // d'authentification reste utile pour synchroniser le reste de l'application,
