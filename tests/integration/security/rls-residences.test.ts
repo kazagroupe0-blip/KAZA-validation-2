@@ -70,8 +70,8 @@ describe('RLS: residences table', () => {
 
   describe('SELECT policies', () => {
     it('published & verified residence is visible to all', async () => {
-      const residenceId = await createResidenceDirect(landlordA.user.id);
-      // Admin verifies it (already verified by default in test)
+      const residenceId = await createResidenceDirect(landlordA.user.id, { moderation_status: 'pending' });
+      // The moderation RPC accepts only residences explicitly waiting for review.
       await supabaseAdmin.rpc('admin_moderate_residence', { p_residence_id: residenceId, p_action: 'approve' });
 
       const { data, error } = await supabaseAnon.from('residences').select('*').eq('id', residenceId).single();
