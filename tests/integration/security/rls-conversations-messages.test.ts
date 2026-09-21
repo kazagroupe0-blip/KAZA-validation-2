@@ -270,6 +270,78 @@ describe('RLS: conversations & messages tables', () => {
     });
   });
 
+  describe('message side effects', () => {
+    it('sending a message updates conversation preview and creates a notification for the recipient', async () => {
+      const { convId } = await setupConversation(landlordA, tenantA);
+      const body = `Bonjour ${Date.now()}`;
+
+      const { error: sendError } = await getClient(tenantA).from('messages').insert({
+        conversation_id: convId,
+        sender_id: tenantA.user.id,
+        body,
+        kind: 'text',
+      });
+      expect(sendError).toBeNull();
+
+      const { data: conversations, error: convError } = await getClient(landlordA)
+        .rpc('list_my_conversations');
+      expect(convError).toBeNull();
+      const conversation = (conversations as any[]).find((c) => c.id === convId);
+      expect(conversation).toMatchObject({
+        id: convId,
+        last_message_preview: body.slice(0, 80),
+        unread_count: 1,
+      });
+
+      const { data: notifications, error: notifError } = await getClient(landlordA)
+        .from('notifications')
+        .select('type, title, body, data')
+        .eq('type', 'message')
+        .contains('data', { conversation_id: convId })
+        .order('created_at', { ascending: false })
+        .limit(1);
+      expect(notifError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'message',
+        title: 'Nouveau message',
+        body,
+      });
+    });
+
+    it('markConversationRead changes unread state without allowing the recipient to edit content', async () => {
+      const { convId } = await setupConversation(landlordA, tenantA);
+      const body = 'Message à lire';
+      const { data: inserted, error: insertError } = await getClient(tenantA)
+        .from('messages')
+        .insert({
+          conversation_id: convId,
+          sender_id: tenantA.user.id,
+          body,
+          kind: 'text',
+        })
+        .select('id')
+        .single();
+      expect(insertError).toBeNull();
+
+      const before = await getClient(landlordA).rpc('list_my_conversations');
+      const conversationBefore = (before.data as any[]).find((c) => c.id === convId);
+      expect(conversationBefore?.unread_count).toBe(1);
+
+      const marked = await getClient(landlordA)
+        .from('messages')
+        .update({ read_at: new Date().toISOString(), body: 'Tentative de modification' })
+        .eq('id', inserted.id)
+        .select('body, read_at')
+        .single();
+      expect(marked.error).toBeNull();
+      expect(marked.data).toMatchObject({ body, read_at: expect.any(String) });
+
+      const after = await getClient(landlordA).rpc('list_my_conversations');
+      const conversationAfter = (after.data as any[]).find((c) => c.id === convId);
+      expect(conversationAfter?.unread_count).toBe(0);
+    });
+  });
+
   describe('messages UPDATE/DELETE', () => {
     it('user CANNOT update messages', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
