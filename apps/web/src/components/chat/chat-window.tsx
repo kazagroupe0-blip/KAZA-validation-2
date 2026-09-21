@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, CheckCheck, Calendar, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
 import {
@@ -24,17 +23,8 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
-import { env } from '@/lib/env';
 
 const STORAGE_MAX = 8 * 1024 * 1024;
-
-const realtimeClient = createClient(env.supabaseUrl, env.supabaseAnonKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-  },
-});
 
 export function ChatWindow() {
   const { id } = useParams<{ id: string }>();
@@ -70,27 +60,27 @@ export function ChatWindow() {
     void load();
   }, [load]);
 
-  // Temps réel Supabase — client dédié pour découpler le WebSocket du
-  // client SSR/cookies utilisé pour les requêtes REST.
+  // Temps réel Supabase — client dédié, authentifié avec la session
+  // du client SSR. Le listener auth couvre aussi la course de bootstrap.
   useEffect(() => {
-    let channel: ReturnType<typeof realtimeClient.channel> | null = null;
+    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
-    setIsConnected(false);
-    setRealtimeError(null);
 
-    void (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session || cancelled) {
-        setRealtimeError('Session Supabase indisponible pour Realtime');
-        return;
-      }
+    const connect = (accessToken: string | null) => {
+      if (!accessToken || cancelled || channel) return;
 
-      realtimeClient.realtime.setAuth(session.access_token);
-      channel = realtimeClient
-        .channel(`messages:${id}`)
+      supabaseRealtime.realtime.setAuth(accessToken);
+      channel = supabaseRealtime
+        .channel(\`messages:\${id}\`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` },
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: \`conversation_id=eq.\${id}\`,
+          },
           (payload: RealtimePostgresInsertPayload<Message>) => {
             const m = payload.new as Message;
             setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
@@ -99,21 +89,34 @@ export function ChatWindow() {
             }
           },
         )
-        .subscribe((status: REALTIME_SUBSCRIBE_STATES, err?: Error) => {
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
           setIsConnected(status === 'SUBSCRIBED');
           if (status === 'SUBSCRIBED') {
             setRealtimeError(null);
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            const message = err?.message || status;
-            setRealtimeError(message);
-            console.error('[kaza:realtime] subscription failed', status, message);
+            const detail = err instanceof Error ? err.message : String(err ?? status);
+            setRealtimeError(detail);
+            console.error('[kaza:realtime] subscription failed', status, detail);
           }
         });
-    })();
+    };
+
+    setIsConnected(false);
+    setRealtimeError(null);
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) connect(session?.access_token ?? null);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled && session) connect(session.access_token);
+    });
+    authSubscription = data.subscription;
 
     return () => {
       cancelled = true;
-      if (channel) void realtimeClient.removeChannel(channel);
+      authSubscription?.unsubscribe();
+      if (channel) void supabaseRealtime.removeChannel(channel);
     };
   }, [id, user?.id]);
 
@@ -131,8 +134,6 @@ export function ChatWindow() {
   // URLs signées pour les pièces jointes (bucket privé) — mises en cache
   // Résolues en parallèle par lots de 6 (pas de round-trip séquentiel).
   const [signedAttachments, setSignedAttachments] = useState<Record<string, string>>({});
-  const [isConnected, setIsConnected] = useState(false);
-  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const [realtimeError, setRealtimeError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -262,7 +263,6 @@ export function ChatWindow() {
               data-testid="realtime-status"
               data-state={isConnected ? 'connected' : 'disconnected'}
               data-error={realtimeError ?? undefined}
-              data-error={realtimeError ?? ''}
               className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`}
               title={isConnected ? 'Connecté' : 'Déconnecté'}
             />
