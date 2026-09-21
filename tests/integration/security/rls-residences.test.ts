@@ -320,7 +320,7 @@ describe('RLS: residences table', () => {
         .single();
 
       expect(data).toMatchObject({
-        is_published: true,
+        is_published: false,
         is_verified: false,
         moderation_status: 'pending',
       });
@@ -446,7 +446,7 @@ describe('RLS: residences table', () => {
         .single();
 
       expect(data).toMatchObject({
-        is_published: true,
+        is_published: false,
         is_verified: false,
         moderation_status: 'pending',
         moderation_reason: null,
