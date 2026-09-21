@@ -197,10 +197,13 @@ Original error=${error instanceof Error ? error.message : String(error)}`,
     // 6. L'admin approuve. La résidence devient alors réellement publique.
     await login(page, ADMIN_EMAIL, ADMIN_PW);
     await page.goto('/admin');
-    const pendingAgain = page.locator('li').filter({ hasText: PENDING_TITLE }).first();
+    const moderationQueueAfterResubmit = page.locator('section[aria-labelledby="moderation"]');
+    const pendingAgain = moderationQueueAfterResubmit.locator('li').filter({ hasText: PENDING_TITLE }).first();
     await expect(pendingAgain).toBeVisible({ timeout: 15_000 });
     await pendingAgain.getByRole('button', { name: 'Approuver' }).click();
-    await expect(page.locator('li').filter({ hasText: PENDING_TITLE })).toHaveCount(0);
+    await expect(
+      moderationQueueAfterResubmit.locator('li').filter({ hasText: PENDING_TITLE }),
+    ).toHaveCount(0);
 
     await expectTitleVisibleInSearch(page, PENDING_TITLE);
 
