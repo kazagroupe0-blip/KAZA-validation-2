@@ -28,7 +28,8 @@ begin
 
   select * into v_conv
     from public.conversations
-   where id = p_conversation_id;
+   where id = p_conversation_id
+   for update;
 
   if v_conv.id is null then
     raise exception 'Conversation introuvable' using errcode = 'P0002';
