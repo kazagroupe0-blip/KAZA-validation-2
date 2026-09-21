@@ -421,7 +421,7 @@ jobs:
           # Conserver le log Edge Function uniquement en cas d'échec E2E :
           # il permet de distinguer un process mort d'une erreur métier HTTP.
           set +e
-          npm run test:e2e
+          NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS=1 npm run test:e2e
           TEST_STATUS=$?
           set -e
           if [ "$TEST_STATUS" -ne 0 ]; then
