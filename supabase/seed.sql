@@ -99,6 +99,22 @@ values (
 )
 on conflict (id) do nothing;
 
+-- Bien dédié au scénario chat E2E : indépendant du parcours paiement qui peut
+-- rendre le bien 101 occupé pendant d'autres scénarios.
+insert into public.residences (id, owner_id, title, description, type, price_monthly,
+                               deposit, bedrooms, bathrooms, surface, address, city, zone,
+                               status, is_published, is_verified, moderation_status)
+values (
+  '00000000-0000-0000-0000-000000000103',
+  '00000000-0000-0000-0000-000000000002',
+  'Studio Chat E2E Haie Vive',
+  'Bien de démonstration dédié aux échanges temps réel.',
+  'studio', 90000, 270000, 1, 1, 30,
+  'Rue du Chat E2E', 'Cotonou', 'Haie Vive',
+  'libre', true, true, 'approved'
+)
+on conflict (id) do nothing;
+
 -- Deuxième bien (non publié : permet de tester la limite freemium et l'édition)
 insert into public.residences (id, owner_id, title, description, type, price_monthly,
                                deposit, bedrooms, bathrooms, surface, address, city, zone,
