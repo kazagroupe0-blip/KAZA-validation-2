@@ -83,13 +83,17 @@ describe('Visits: table & RLS', () => {
       const clientTenant = getClient(tenant);
       const conversationId = await setupConversation();
 
+      const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      slotStart.setMinutes(0, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
+
       const { data, error } = await clientTenant
         .from('visits')
         .insert({
           conversation_id: conversationId,
           proposed_by: tenant.user.id,
-          slot_start: '2026-08-20 14:00:00+00',
-          slot_end: '2026-08-20 16:00:00+00',
+          slot_start: slotStart.toISOString(),
+          slot_end: slotEnd.toISOString(),
           status: 'proposed',
         })
         .select()
@@ -109,13 +113,17 @@ describe('Visits: table & RLS', () => {
       const conversationId = await setupConversation();
 
       // Create a proposed visit directly
+      const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      slotStart.setMinutes(0, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
+
       const { data: visit, error: visitError } = await supabaseAdmin
         .from('visits')
         .insert({
           conversation_id: conversationId,
           proposed_by: tenant.user.id,
-          slot_start: '2026-08-20 14:00:00+00',
-          slot_end: '2026-08-20 16:00:00+00',
+          slot_start: slotStart.toISOString(),
+          slot_end: slotEnd.toISOString(),
           status: 'proposed',
         })
         .select()
@@ -155,9 +163,13 @@ describe('Visits: table & RLS', () => {
       const { error: sessionError } = await tenantClient.auth.setSession(tenant.session);
       expect(sessionError).toBeNull();
 
+      const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      slotStart.setMinutes(0, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
+
       const visitId = await proposeVisit(
         conversationId,
-        [{ start: '2026-08-20T14:00:00Z', end: '2026-08-20T16:00:00Z' }],
+        [{ start: slotStart.toISOString(), end: slotEnd.toISOString() }],
         tenantClient,
       );
       expect(visitId).toBeDefined();
