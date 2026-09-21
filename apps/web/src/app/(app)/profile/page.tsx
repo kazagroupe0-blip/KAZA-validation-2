@@ -68,16 +68,8 @@ export default function ProfilePage() {
   }, [user]);
 
   const missing = useMemo(() => missingLandlordFields(user), [user]);
-  const formComplete =
-    user?.role === 'bailleur'
-    && fullName.trim().length >= 2
-    && /^\+229\d{10}$/.test(phone.replace(/\s+/g, ''))
-    && Boolean(user.email?.trim())
-    && businessName.trim().length > 0
-    && Boolean(momoProvider)
-    && /^\+229\d{10}$/.test(momoNumber.replace(/\s+/g, ''));
   const landlordComplete = user?.role === 'bailleur'
-    && (user.onboarding_completed === true || formComplete || savedComplete);
+    && (user.onboarding_completed === true || savedComplete);
 
   useEffect(() => {
     if (user?.role !== 'bailleur') return;
