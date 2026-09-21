@@ -37,7 +37,7 @@ function missingLandlordFields(profile: Profile | null): string[] {
 }
 
 export default function ProfilePage() {
-  const { user, refresh } = useAuth();
+  const { user, setUserProfile } = useAuth();
   const toast = useToast();
   const router = useRouter();
 
@@ -52,6 +52,7 @@ export default function ProfilePage() {
   const [payouts, setPayouts] = useState<LandlordPayout[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedComplete, setSavedComplete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -67,7 +68,16 @@ export default function ProfilePage() {
   }, [user]);
 
   const missing = useMemo(() => missingLandlordFields(user), [user]);
-  const landlordComplete = user?.role === 'bailleur' && user.onboarding_completed === true;
+  const formComplete =
+    user?.role === 'bailleur'
+    && fullName.trim().length >= 2
+    && /^\+229\d{10}$/.test(phone.replace(/\s+/g, ''))
+    && Boolean(user.email?.trim())
+    && businessName.trim().length > 0
+    && Boolean(momoProvider)
+    && /^\+229\d{10}$/.test(momoNumber.replace(/\s+/g, ''));
+  const landlordComplete = user?.role === 'bailleur'
+    && (user.onboarding_completed === true || formComplete || savedComplete);
 
   useEffect(() => {
     if (user?.role !== 'bailleur') return;
@@ -78,7 +88,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await updateProfile({
+      const updatedProfile = await updateProfile({
         full_name: fullName,
         phone,
         ...(user?.role === 'bailleur'
@@ -92,7 +102,9 @@ export default function ProfilePage() {
             }
           : {}),
       });
-      await refresh();
+      setUserProfile(updatedProfile);
+      setSavedComplete(missingLandlordFields(updatedProfile).length === 0);
+      // L'état du contexte vient maintenant directement de la ligne sauvegardée.
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
         user?.role === 'bailleur' ? 'Profil enregistré' : 'Profil mis à jour',
@@ -101,6 +113,7 @@ export default function ProfilePage() {
           : undefined,
       );
     } catch (err) {
+      console.error(err);
       toast.error(err instanceof ApiError ? err.message : 'Mise à jour impossible');
     } finally {
       setSaving(false);

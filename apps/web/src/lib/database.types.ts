@@ -1411,6 +1411,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      list_admin_residences: {
+        Args: { p_limit?: number; p_offset?: number }
+        Returns: Json[]
+      }
       list_landlord_expenses: {
         Args: {
           p_category?: Database["public"]["Enums"]["expense_category"]

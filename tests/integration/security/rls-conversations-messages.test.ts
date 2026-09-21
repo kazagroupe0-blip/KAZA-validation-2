@@ -65,6 +65,7 @@ describe('RLS: conversations & messages tables', () => {
       zone: 'Haie Vive',
       is_published: true,
       is_verified: true,
+      moderation_status: 'approved',
     }).select('id').single();
     if (error) throw error;
     return data.id;
@@ -122,6 +123,44 @@ describe('RLS: conversations & messages tables', () => {
   });
 
   describe('conversations INSERT', () => {
+    it('opening the same residence twice reuses the same conversation', async () => {
+      const residenceId = await createPublishedVerifiedResidence(landlordA);
+      const first = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
+      const second = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
+
+      expect(first.error).toBeNull();
+      expect(second.error).toBeNull();
+      expect(second.data).toBe(first.data);
+    });
+
+    it('landlord cannot open a tenant conversation through the contact RPC', async () => {
+      const residenceId = await createPublishedVerifiedResidence(landlordA);
+      const result = await getClient(landlordB).rpc('open_conversation', { p_residence_id: residenceId });
+      expect(result.error).toBeDefined();
+    });
+
+    it('tenant cannot open a conversation for a non-free residence', async () => {
+      const { data, error } = await supabaseAdmin.from('residences').insert({
+        owner_id: landlordA.user.id,
+        title: `Occupied ${Date.now()}`,
+        type: 'appartement',
+        price_monthly: 100000,
+        deposit: 200000,
+        bedrooms: 2,
+        bathrooms: 1,
+        city: 'Cotonou',
+        zone: 'Haie Vive',
+        status: 'occupee',
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+      }).select('id').single();
+      if (error) throw error;
+
+      const result = await getClient(tenantA).rpc('open_conversation', { p_residence_id: data.id });
+      expect(result.error).toBeDefined();
+    });
+
     it('tenant CAN open conversation via RPC (not direct insert)', async () => {
       const residenceId = await createPublishedVerifiedResidence(landlordA);
       const { data: convId, error } = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
@@ -228,6 +267,78 @@ describe('RLS: conversations & messages tables', () => {
       });
       // Should be rejected - only landlord via agree_visit can create visit_agreed
       expect(error).toBeDefined();
+    });
+  });
+
+  describe('message side effects', () => {
+    it('sending a message updates conversation preview and creates a notification for the recipient', async () => {
+      const { convId } = await setupConversation(landlordA, tenantA);
+      const body = `Bonjour ${Date.now()}`;
+
+      const { error: sendError } = await getClient(tenantA).from('messages').insert({
+        conversation_id: convId,
+        sender_id: tenantA.user.id,
+        body,
+        kind: 'text',
+      });
+      expect(sendError).toBeNull();
+
+      const { data: conversations, error: convError } = await getClient(landlordA)
+        .rpc('list_my_conversations');
+      expect(convError).toBeNull();
+      const conversation = (conversations as any[]).find((c) => c.id === convId);
+      expect(conversation).toMatchObject({
+        id: convId,
+        last_message_preview: body.slice(0, 80),
+        unread_count: 1,
+      });
+
+      const { data: notifications, error: notifError } = await getClient(landlordA)
+        .from('notifications')
+        .select('type, title, body, data')
+        .eq('type', 'message')
+        .contains('data', { conversation_id: convId })
+        .order('created_at', { ascending: false })
+        .limit(1);
+      expect(notifError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'message',
+        title: 'Nouveau message',
+        body,
+      });
+    });
+
+    it('markConversationRead changes unread state without allowing the recipient to edit content', async () => {
+      const { convId } = await setupConversation(landlordA, tenantA);
+      const body = 'Message à lire';
+      const { data: inserted, error: insertError } = await getClient(tenantA)
+        .from('messages')
+        .insert({
+          conversation_id: convId,
+          sender_id: tenantA.user.id,
+          body,
+          kind: 'text',
+        })
+        .select('id')
+        .single();
+      expect(insertError).toBeNull();
+
+      const before = await getClient(landlordA).rpc('list_my_conversations');
+      const conversationBefore = (before.data as any[]).find((c) => c.id === convId);
+      expect(conversationBefore?.unread_count).toBe(1);
+
+      const marked = await getClient(landlordA)
+        .from('messages')
+        .update({ read_at: new Date().toISOString(), body: 'Tentative de modification' })
+        .eq('id', inserted.id)
+        .select('body, read_at')
+        .single();
+      expect(marked.error).toBeNull();
+      expect(marked.data).toMatchObject({ body, read_at: expect.any(String) });
+
+      const after = await getClient(landlordA).rpc('list_my_conversations');
+      const conversationAfter = (after.data as any[]).find((c) => c.id === convId);
+      expect(conversationAfter?.unread_count).toBe(0);
     });
   });
 

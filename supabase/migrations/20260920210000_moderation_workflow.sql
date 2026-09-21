@@ -189,4 +189,4 @@ revoke execute on function public.admin_moderate_residence(uuid, text, text) fro
 
 grant execute on function public.submit_residence_for_review(uuid) to authenticated;
 grant execute on function public.withdraw_residence_publication(uuid) to authenticated;
-grant execute on function public.admin_moderate_residence(uuid, text, text) to authenticated;
+grant execute on function public.admin_moderate_residence(uuid, text, text) to authenticated, service_role;

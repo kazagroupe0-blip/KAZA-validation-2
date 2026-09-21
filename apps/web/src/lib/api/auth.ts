@@ -5,8 +5,14 @@ import { requireUser } from '../require-user';
 import type { MomoProvider } from './account';
 
 /** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
-function assertBeninPhone(phone: string): void {
+function normalizeBeninPhone(phone: string): string {
   const cleaned = phone.replace(/\s+/g, '');
+  if (/^\d{10}$/.test(cleaned)) return `+229${cleaned}`;
+  return cleaned;
+}
+
+function assertBeninPhone(phone: string): void {
+  const cleaned = normalizeBeninPhone(phone);
   if (!/^\+229\d{10}$/.test(cleaned)) {
     throw new ApiError(400, 'Numéro invalide — format attendu : +229 01 00 00 00 00');
   }
@@ -171,9 +177,8 @@ export interface ProfileUpdateInput {
   bank_iban?: string | null;
 }
 
-export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
-  const user = await requireUser().catch(() => null);
-  if (!user) return;
+export async function updateProfile(patch: ProfileUpdateInput): Promise<Profile> {
+  const user = await requireUser();
 
   const payload = { ...patch };
 
@@ -182,7 +187,7 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
   }
 
   if (typeof payload.phone === 'string') {
-    const cleaned = payload.phone.replace(/\s+/g, '');
+    const cleaned = normalizeBeninPhone(payload.phone);
     if (cleaned === '') {
       payload.phone = null;
     } else {
@@ -192,7 +197,7 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
   }
 
   if (typeof payload.momo_number === 'string') {
-    const cleaned = payload.momo_number.replace(/\s+/g, '');
+    const cleaned = normalizeBeninPhone(payload.momo_number);
     if (cleaned === '') {
       payload.momo_number = null;
     } else {
@@ -236,4 +241,17 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
     .update(payload)
     .eq('id', user.id);
   if (error) throw normalizeError(error, 'Mise à jour impossible');
+
+  // Le workflow de complétude est porté par un trigger AFTER UPDATE.
+  // Une clause RETURNING sur l'UPDATE initial peut donc refléter la ligne
+  // avant le recalcul du champ onboarding_completed. Relire la ligne après
+  // la transaction permet de retourner l'état réellement persisté.
+  const { data: persisted, error: persistedError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+  if (persistedError) throw normalizeError(persistedError, 'Profil introuvable après la mise à jour');
+  if (!persisted) throw new ApiError(500, 'Profil introuvable après la mise à jour');
+  return persisted;
 }

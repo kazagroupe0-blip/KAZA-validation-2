@@ -329,6 +329,22 @@ jobs:
         run: supabase db reset
         working-directory: .
 
+      - name: Restart Realtime after database migrations
+        run: |
+          docker restart supabase_realtime_kaza
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Status}}' supabase_realtime_kaza 2>/dev/null || true)
+            if [ "$status" = "running" ]; then
+              echo "Realtime is running after migration reset."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Realtime container did not return to running state."
+          docker logs --tail 200 supabase_realtime_kaza || true
+          exit 1
+        working-directory: .
+
       - name: Restore service_role privileges for Edge Functions (CI-only)
         run: |
           cat >/tmp/kaza-e2e-service-role-grants.sql <<'SQL'
@@ -405,7 +421,7 @@ jobs:
           # Conserver le log Edge Function uniquement en cas d'échec E2E :
           # il permet de distinguer un process mort d'une erreur métier HTTP.
           set +e
-          npm run test:e2e
+          NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS=1 npm run test:e2e
           TEST_STATUS=$?
           set -e
           if [ "$TEST_STATUS" -ne 0 ]; then
@@ -416,6 +432,10 @@ jobs:
               echo "::error::receipts-sign process terminé avant l'échec E2E."
             fi
             tail -200 /tmp/kaza-receipts-sign.log || true
+            echo "::group::realtime diagnostics"
+            docker inspect -f '{{json .State}}' supabase_realtime_kaza 2>/dev/null || true
+            docker logs --tail 200 supabase_realtime_kaza 2>/dev/null || true
+            echo "::endgroup::"
             echo "::endgroup::"
           fi
           exit "$TEST_STATUS"

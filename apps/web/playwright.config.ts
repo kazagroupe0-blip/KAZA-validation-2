@@ -4,6 +4,11 @@ import { defineConfig, devices } from '@playwright/test';
 // Requiert : Supabase local (npx supabase start + supabase db reset) — pas de backend.
 export default defineConfig({
   testDir: './e2e',
+  // Les scénarios partagent une base Supabase locale mutable (paiements,
+  // statuts de biens, modération). Un seul worker évite les courses entre
+  // fichiers tout en conservant les vraies assertions utilisateur.
+  workers: 1,
+  fullyParallel: false,
   timeout: 60_000,
   retries: 0,
   use: {

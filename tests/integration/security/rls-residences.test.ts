@@ -69,13 +69,24 @@ describe('RLS: residences table', () => {
   }
 
   describe('SELECT policies', () => {
-    it('published & verified residence is visible to all', async () => {
-      const residenceId = await createResidenceDirect(landlordA.user.id);
-      // Admin verifies it (already verified by default in test)
-      await supabaseAdmin.rpc('admin_moderate_residence', { p_residence_id: residenceId, p_action: 'approve' });
+    it('published & verified residence is visible to an authenticated tenant', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        moderation_status: 'pending',
+        status: 'libre',
+      });
+      // The moderation RPC accepts only residences explicitly waiting for review.
+      const moderated = await getClient(adminUser).rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+      if (moderated.error) {
+        throw new Error(`admin_moderate_residence failed: ${JSON.stringify(moderated.error)}`);
+      }
 
-      const { data, error } = await supabaseAnon.from('residences').select('*').eq('id', residenceId).single();
-      expect(error).toBeNull();
+      const { data, error } = await getClient(tenantA).from('residences').select('*').eq('id', residenceId).single();
+      if (error) {
+        throw new Error(`authenticated residence SELECT failed: ${JSON.stringify(error)}`);
+      }
       expect(data?.is_published).toBe(true);
       expect(data?.is_verified).toBe(true);
     });
@@ -92,6 +103,33 @@ describe('RLS: residences table', () => {
       const residenceId = await createResidenceDirect(landlordA.user.id, { is_published: true, is_verified: false });
       const clientTenant = getClient(tenantA);
       const { data, error } = await clientTenant.from('residences').select('*').eq('id', residenceId).single();
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
+    });
+
+    it('tenant cannot fetch a draft residence through get_residence RPC', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+      const { data, error } = await getClient(tenantA).rpc('get_residence', {
+        p_residence_id: residenceId,
+      });
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
+    });
+
+    it('tenant cannot fetch an occupied residence through get_residence RPC', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: true,
+        is_verified: true,
+        status: 'occupee',
+        moderation_status: 'approved',
+      });
+      const { data, error } = await getClient(tenantA).rpc('get_residence', {
+        p_residence_id: residenceId,
+      });
       expect(error).toBeDefined();
       expect(data).toBeNull();
     });
@@ -173,6 +211,88 @@ describe('RLS: residences table', () => {
       });
     }
 
+    it('approved residence becomes draft and unpublished after substantive owner edit', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+        photos: ['https://example.com/original.jpg'],
+      });
+      const landlord = getClient(landlordA);
+
+      const updated = await landlord
+        .from('residences')
+        .update({ title: 'Titre modifié après approbation' })
+        .eq('id', residenceId)
+        .select('title, is_published, is_verified, moderation_status, moderation_reason, moderated_at')
+        .single();
+
+      expect(updated.error).toBeNull();
+      expect(updated.data).toMatchObject({
+        title: 'Titre modifié après approbation',
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+        moderation_reason: null,
+        moderated_at: null,
+      });
+    });
+
+    it('landlord cannot directly mutate moderation_status or publication flags', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+      const landlord = getClient(landlordA);
+
+      const updated = await landlord
+        .from('residences')
+        .update({
+          is_published: true,
+          is_verified: true,
+          moderation_status: 'approved',
+        })
+        .eq('id', residenceId)
+        .select('is_published, is_verified, moderation_status')
+        .single();
+
+      expect(updated.error).toBeNull();
+      expect(updated.data).toMatchObject({
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+    });
+
+    it('non-admin cannot call the admin moderation RPC', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'pending',
+      });
+      const landlord = getClient(landlordA);
+
+      const result = await landlord.rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+
+      expect(result.error).toBeDefined();
+
+      const { data } = await landlord
+        .from('residences')
+        .select('is_published, is_verified, moderation_status')
+        .eq('id', residenceId)
+        .single();
+
+      expect(data).toMatchObject({
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'pending',
+      });
+    });
+
     it('landlord cannot directly publish; submission moves draft to pending', async () => {
       const residenceId = await createDraft();
       const clientLandlord = getClient(landlordA);
@@ -200,7 +320,7 @@ describe('RLS: residences table', () => {
         .single();
 
       expect(data).toMatchObject({
-        is_published: true,
+        is_published: false,
         is_verified: false,
         moderation_status: 'pending',
       });
@@ -241,6 +361,33 @@ describe('RLS: residences table', () => {
       });
     });
 
+    it('admin approval notifies the landlord', async () => {
+      const residenceId = await createDraft();
+      const landlord = getClient(landlordA);
+      await landlord.rpc('submit_residence_for_review', { p_residence_id: residenceId });
+
+      const moderated = await supabaseAdmin.rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+      expect(moderated.error).toBeNull();
+
+      const { data: notifications, error: notificationError } = await getClient(landlordA)
+        .from('notifications')
+        .select('type, title, body, data')
+        .eq('type', 'system')
+        .contains('data', { residence_id: residenceId, moderation_status: 'approved' })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      expect(notificationError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'system',
+        title: 'Bien vérifié',
+        data: { residence_id: residenceId, moderation_status: 'approved' },
+      });
+    });
+
     it('admin rejection persists the reason and allows resubmission', async () => {
       const residenceId = await createDraft();
       const landlord = getClient(landlordA);
@@ -253,6 +400,26 @@ describe('RLS: residences table', () => {
         p_reason: 'Ajoutez une photo claire de la façade.',
       });
       expect(rejected.error).toBeNull();
+
+      const { data: notifications, error: notificationError } = await landlord
+        .from('notifications')
+        .select('type, title, body, data')
+        .eq('type', 'system')
+        .contains('data', { residence_id: residenceId, moderation_status: 'rejected' })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      expect(notificationError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'system',
+        title: 'Annonce refusée',
+        body: expect.stringContaining('Ajoutez une photo claire de la façade.'),
+        data: {
+          residence_id: residenceId,
+          moderation_status: 'rejected',
+          reason: 'Ajoutez une photo claire de la façade.',
+        },
+      });
 
       const rejectedRow = await landlord
         .from('residences')
@@ -279,7 +446,7 @@ describe('RLS: residences table', () => {
         .single();
 
       expect(data).toMatchObject({
-        is_published: true,
+        is_published: false,
         is_verified: false,
         moderation_status: 'pending',
         moderation_reason: null,

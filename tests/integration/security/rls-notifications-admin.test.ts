@@ -229,6 +229,27 @@ describe('RLS: notifications & admin tables', () => {
       expect(error).toBeDefined();
     });
 
+    it('admin CANNOT demote another admin through the generic role toggle', async () => {
+      const { error: promoteError } = await supabaseAdmin
+        .from('profiles')
+        .update({ role: 'admin' })
+        .eq('id', landlordA.user.id);
+      expect(promoteError).toBeNull();
+
+      const { error } = await getClient(adminUser).rpc('admin_toggle_role', {
+        p_user_id: landlordA.user.id,
+        p_role: 'bailleur',
+      });
+      expect(error).toBeDefined();
+
+      const { data: target } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', landlordA.user.id)
+        .single();
+      expect(target?.role).toBe('admin');
+    });
+
     it('admin CANNOT toggle role to admin', async () => {
       const { error } = await getClient(adminUser).rpc('admin_toggle_role', { p_user_id: tenantA.user.id, p_role: 'admin' });
       // Should be blocked - admin role cannot be assigned via this RPC

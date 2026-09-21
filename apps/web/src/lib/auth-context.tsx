@@ -12,6 +12,7 @@ export interface AuthState {
   role: Role | null;
   isPremium: boolean;
   refresh: () => Promise<void>;
+  setUserProfile: (profile: Profile) => void;
   signOut: () => Promise<void>;
 }
 
@@ -50,6 +51,10 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
     return () => subscription.unsubscribe();
   }, [refresh]);
 
+  const setUserProfile = useCallback((nextProfile: Profile) => {
+    setProfile(nextProfile);
+  }, []);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setProfile(null);
@@ -63,9 +68,10 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       role: profile?.role ?? null,
       isPremium: profile?.is_premium ?? false,
       refresh,
+      setUserProfile,
       signOut,
     }),
-    [loading, profile, refresh, signOut],
+    [loading, profile, refresh, setUserProfile, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

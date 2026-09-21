@@ -69,22 +69,23 @@ where u.email in ('locataire.demo@kaza.bj', 'bailleur.demo@kaza.bj', 'admin@kaza
 
 -- Profils (le trigger handle_new_user crée un profil visiteur sur chaque insert
 -- auth.users, donc on force le rôle ici avec un UPDATE sur conflit d'id)
-insert into public.profiles (id, email, phone, full_name, role, consent_apdp)
+insert into public.profiles (id, email, phone, full_name, role, consent_apdp, is_premium)
 values
-  ('00000000-0000-0000-0000-000000000001', 'locataire.demo@kaza.bj', '+2290100000001', 'Locataire Démo', 'locataire', true),
-  ('00000000-0000-0000-0000-000000000002', 'bailleur.demo@kaza.bj', '+2290100000002', 'Bailleur Démo', 'bailleur', true),
-  ('00000000-0000-0000-0000-000000000003', 'admin@kaza.bj', '+2290100000003', 'Admin KAZA', 'admin', true)
+  ('00000000-0000-0000-0000-000000000001', 'locataire.demo@kaza.bj', '+2290100000001', 'Locataire Démo', 'locataire', true, false),
+  ('00000000-0000-0000-0000-000000000002', 'bailleur.demo@kaza.bj', '+2290100000002', 'Bailleur Démo', 'bailleur', true, true),
+  ('00000000-0000-0000-0000-000000000003', 'admin@kaza.bj', '+2290100000003', 'Admin KAZA', 'admin', true, false)
 on conflict (id) do update set
   email = excluded.email,
   phone = excluded.phone,
   full_name = excluded.full_name,
   role = excluded.role,
-  consent_apdp = excluded.consent_apdp;
+  consent_apdp = excluded.consent_apdp,
+  is_premium = excluded.is_premium;
 
 -- Bien de démo du bailleur (publié + vérifié + géolocalisé) pour l'explorer/E2E
 insert into public.residences (id, owner_id, title, description, type, price_monthly,
                                deposit, bedrooms, bathrooms, surface, address, city, zone,
-                               lat, lng, geom, status, is_published, is_verified)
+                               lat, lng, geom, status, is_published, is_verified, moderation_status)
 values (
   '00000000-0000-0000-0000-000000000101',
   '00000000-0000-0000-0000-000000000002',
@@ -94,7 +95,23 @@ values (
   'Rue des Pêcheurs', 'Cotonou', 'Fidjrossè',
   6.3486, 2.3855,
   st_setsrid(st_makepoint(2.3855, 6.3486), 4326)::geography,
-  'libre', true, true
+  'libre', true, true, 'approved'
+)
+on conflict (id) do nothing;
+
+-- Bien dédié au scénario chat E2E : indépendant du parcours paiement qui peut
+-- rendre le bien 101 occupé pendant d'autres scénarios.
+insert into public.residences (id, owner_id, title, description, type, price_monthly,
+                               deposit, bedrooms, bathrooms, surface, address, city, zone,
+                               status, is_published, is_verified, moderation_status)
+values (
+  '00000000-0000-0000-0000-000000000103',
+  '00000000-0000-0000-0000-000000000002',
+  'Studio Chat E2E Haie Vive',
+  'Bien de démonstration dédié aux échanges temps réel.',
+  'studio', 90000, 270000, 1, 1, 30,
+  'Rue du Chat E2E', 'Cotonou', 'Haie Vive',
+  'libre', true, true, 'approved'
 )
 on conflict (id) do nothing;
 

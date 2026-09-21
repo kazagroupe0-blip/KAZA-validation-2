@@ -14,7 +14,7 @@ import {
 } from '@/lib/supabase-api';
 import { VisitProposalModal } from './VisitProposalModal';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase-client';
+import { supabase, supabaseRealtime } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload, REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
 import type { ConversationWithRelations, Message } from '@/lib/types';
 import { timeAgo, formatXof } from '@/lib/format';
@@ -40,6 +40,8 @@ export function ChatWindow() {
   const [visitModal, setVisitModal] = useState(false);
   const [proposeModal, setProposeModal] = useState(false);
   const [isLandlord, setIsLandlord] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -58,26 +60,63 @@ export function ChatWindow() {
     void load();
   }, [load]);
 
-  // note : temps réel Supabase — les messages arrivent sans rechargement
+  // Temps réel Supabase — client dédié, authentifié avec la session du
+  // client SSR. Le listener auth couvre la course de bootstrap de session.
   useEffect(() => {
-    const channel = supabase
-      .channel(`messages:${id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` },
-        (payload: RealtimePostgresInsertPayload<Message>) => {
-          const m = payload.new as Message;
-          setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
-          if (m.sender_id !== user?.id) {
-            void markConversationRead(id).catch(() => undefined);
+    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let authSubscription: { unsubscribe: () => void } | null = null;
+    let cancelled = false;
+
+    const connect = (accessToken: string | null) => {
+      if (!accessToken || cancelled || channel) return;
+
+      supabaseRealtime.realtime.setAuth(accessToken);
+      channel = supabaseRealtime
+        .channel(`messages:\${id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.\${id}`,
+          },
+          (payload: RealtimePostgresInsertPayload<Message>) => {
+            const m = payload.new as Message;
+            setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+            if (m.sender_id !== user?.id) {
+              void markConversationRead(id).catch(() => undefined);
+            }
+          },
+        )
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
+          setIsConnected(status === 'SUBSCRIBED');
+          if (status === 'SUBSCRIBED') {
+            setRealtimeError(null);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            const detail = err instanceof Error ? err.message : String(err ?? status);
+            setRealtimeError(detail);
+            console.error('[kaza:realtime] subscription failed', status, detail);
           }
-        },
-      )
-      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
-        setIsConnected(status === 'SUBSCRIBED');
-      });
+        });
+    };
+
+    setIsConnected(false);
+    setRealtimeError(null);
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) connect(session?.access_token ?? null);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled && session) connect(session.access_token);
+    });
+    authSubscription = data.subscription;
+
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      authSubscription?.unsubscribe();
+      if (channel) void supabaseRealtime.removeChannel(channel);
     };
   }, [id, user?.id]);
 
@@ -95,7 +134,6 @@ export function ChatWindow() {
   // URLs signées pour les pièces jointes (bucket privé) — mises en cache
   // Résolues en parallèle par lots de 6 (pas de round-trip séquentiel).
   const [signedAttachments, setSignedAttachments] = useState<Record<string, string>>({});
-  const [isConnected, setIsConnected] = useState(true);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -220,7 +258,13 @@ export function ChatWindow() {
           </p>
           <p className="truncate text-xs text-kaza-faint">
             {conversation?.residence?.title ?? 'Chat privé sécurisé'}{conversation?.residence ? ` · ${formatXof(conversation.residence.price_monthly)}/mois` : ' · pièces jointes acceptées'}
-            <span className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`} title={isConnected ? 'Connecté' : 'Déconnecté'} />
+            <span
+              data-testid="realtime-status"
+              data-state={isConnected ? 'connected' : 'disconnected'}
+              data-error={realtimeError ?? undefined}
+              className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`}
+              title={isConnected ? 'Connecté' : 'Déconnecté'}
+            />
           </p>
         </div>
         {isLandlord && (

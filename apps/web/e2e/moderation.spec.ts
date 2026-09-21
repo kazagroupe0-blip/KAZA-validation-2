@@ -63,18 +63,25 @@ test.describe('Cycle de modération des résidences', () => {
     await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Enregistrer les modifications' }).click();
-    await expect(page).toHaveURL(/\/landlord/);
+    await expect(page).toHaveURL(/\/landlord\/dashboard\/?$/);
 
     // 2. Soumission explicite à la modération.
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
+    // Vérifier que l'upload a survécu au save et à la navigation : la soumission
+    // à la modération doit lire l'état réellement persisté en base.
+    await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('publish-toggle').click();
-    await expect(page.getByTestId('moderation-status')).toContainText('En attente de modération');
+    const moderationStatus = page.getByTestId('moderation-status');
+    await expect(
+      moderationStatus.getByText('En attente de modération', { exact: true }),
+    ).toBeVisible({ timeout: 5_000 });
     await searchTitle(page, PENDING_TITLE);
 
     // 3. L'admin refuse avec un motif obligatoire.
     await login(page, ADMIN_EMAIL, ADMIN_PW);
     await page.goto('/admin');
-    const row = page.locator('li').filter({ hasText: PENDING_TITLE }).first();
+    const moderationQueue = page.locator('section[aria-labelledby="moderation"]');
+    const row = moderationQueue.locator('li').filter({ hasText: PENDING_TITLE }).first();
     await expect(row).toBeVisible({ timeout: 15_000 });
 
     page.once('dialog', async (dialog) => {
@@ -83,7 +90,9 @@ test.describe('Cycle de modération des résidences', () => {
     });
     await row.getByRole('button', { name: 'Refuser' }).click();
 
-    await expect(page.locator('li').filter({ hasText: PENDING_TITLE })).toHaveCount(0);
+    await expect(
+      moderationQueue.locator('li').filter({ hasText: PENDING_TITLE }),
+    ).toHaveCount(0);
 
     // 4. Après refus, la résidence reste invisible dans la recherche publique.
     await searchTitle(page, PENDING_TITLE);
@@ -95,16 +104,24 @@ test.describe('Cycle de modération des résidences', () => {
     await expect(page.getByTestId('moderation-status')).toContainText('Ajoutez une photo plus claire de la façade.');
 
     await page.getByTestId('publish-toggle').click();
-    await expect(page.getByTestId('moderation-status')).toContainText('En attente de modération');
+    try {
+      await expect(page.getByTestId('moderation-status')).toContainText('En attente de modération');
+    } catch (error) {
+      const detail = await page.getByTestId('publish-error').textContent().catch(() => null);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\nSoumission : ${detail || 'aucune erreur affichée'}`);
+    }
     await searchTitle(page, PENDING_TITLE);
 
     // 6. L'admin approuve. La résidence devient alors réellement publique.
     await login(page, ADMIN_EMAIL, ADMIN_PW);
     await page.goto('/admin');
-    const pendingAgain = page.locator('li').filter({ hasText: PENDING_TITLE }).first();
+    const moderationQueueAfterResubmit = page.locator('section[aria-labelledby="moderation"]');
+    const pendingAgain = moderationQueueAfterResubmit.locator('li').filter({ hasText: PENDING_TITLE }).first();
     await expect(pendingAgain).toBeVisible({ timeout: 15_000 });
     await pendingAgain.getByRole('button', { name: 'Approuver' }).click();
-    await expect(page.locator('li').filter({ hasText: PENDING_TITLE })).toHaveCount(0);
+    await expect(
+      moderationQueueAfterResubmit.locator('li').filter({ hasText: PENDING_TITLE }),
+    ).toHaveCount(0);
 
     await expectTitleVisibleInSearch(page, PENDING_TITLE);
 
@@ -117,7 +134,7 @@ test.describe('Cycle de modération des résidences', () => {
 
     await page.getByLabel('Titre').fill(EDITED_TITLE);
     await page.getByRole('button', { name: 'Enregistrer les modifications' }).click();
-    await expect(page).toHaveURL(/\/landlord/);
+    await expect(page).toHaveURL(/\/landlord\/dashboard\/?$/);
 
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
     await expect(page.getByTestId('moderation-status')).toContainText('Brouillon');
