@@ -1487,13 +1487,13 @@ export type Database = {
         Returns: undefined
       }
       open_conversation: { Args: { p_residence_id: string }; Returns: string }
+      populate_geometry_columns:
+        | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
+        | { Args: { use_typmod?: boolean }; Returns: string }
       propose_visit: {
         Args: { p_conversation_id: string; p_slots: Json }
         Returns: string[]
       }
-      populate_geometry_columns:
-        | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
-        | { Args: { use_typmod?: boolean }; Returns: string }
       postgis_constraint_dims: {
         Args: { geomcolumn: string; geomschema: string; geomtable: string }
         Returns: number
