@@ -48,9 +48,24 @@ async function expectTitleVisibleInSearch(page: Page, title: string) {
 
 test.describe('Cycle de modération des résidences', () => {
   test('soumission → refus → resoumission → approbation → édition invalidante', async ({ page }) => {
+    let lastResidenceUpdateRequest: unknown = null;
+    let lastResidenceUpdateReturn: unknown = null;
+    let lastGetResidenceReturn: unknown = null;
+
     page.on('console', (message) => {
       if (message.text().includes('[KAZA:RESIDENCE_DIAGNOSTIC]')) {
         console.log(`[KAZA:E2E_BROWSER] ${message.text()}`);
+      }
+    });
+
+    page.on('request', (request) => {
+      const url = request.url();
+      if (request.method() === 'PATCH' && url.includes('/rest/v1/residences?')) {
+        try {
+          lastResidenceUpdateRequest = request.postDataJSON();
+        } catch {
+          lastResidenceUpdateRequest = request.postData();
+        }
       }
     });
 
@@ -63,12 +78,21 @@ test.describe('Cycle de modération des résidences', () => {
 
       try {
         const body = await response.json();
+        if (isResidenceUpdate) lastResidenceUpdateReturn = body;
+        if (isGetResidence) lastGetResidenceReturn = body;
         console.log(
           `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=${JSON.stringify(body)}`,
         );
       } catch (error) {
+        const fallback = {
+          status: response.status(),
+          text: await response.text().catch(() => '<read failed>'),
+          error: error instanceof Error ? error.message : String(error),
+        };
+        if (isResidenceUpdate) lastResidenceUpdateReturn = fallback;
+        if (isGetResidence) lastGetResidenceReturn = fallback;
         console.log(
-          `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} status=${response.status()} body=<non-json> error=${error instanceof Error ? error.message : String(error)}`,
+          `[KAZA:E2E_HTTP] ${isResidenceUpdate ? 'UPDATE_RETURN' : 'GET_RESIDENCE_RETURN'} ${JSON.stringify(fallback)}`,
         );
       }
     });
@@ -98,7 +122,17 @@ test.describe('Cycle de modération des résidences', () => {
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
     // Vérifier que l'upload a survécu au save et à la navigation : la soumission
     // à la modération doit lire l'état réellement persisté en base.
-    await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 });
+    try {
+      await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 });
+    } catch (error) {
+      throw new Error(
+        `Photo absente après rechargement.
+UPDATE request=${JSON.stringify(lastResidenceUpdateRequest)}
+UPDATE return=${JSON.stringify(lastResidenceUpdateReturn)}
+GET_RESIDENCE return=${JSON.stringify(lastGetResidenceReturn)}
+Original error=${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     await page.getByTestId('publish-toggle').click();
     const moderationStatus = page.getByTestId('moderation-status');
     await expect.poll(
