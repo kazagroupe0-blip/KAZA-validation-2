@@ -15,7 +15,7 @@ import {
 } from '@/lib/supabase-api';
 import { VisitProposalModal } from './VisitProposalModal';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase-client';
+import { supabase, supabaseRealtime } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload, REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
 import type { ConversationWithRelations, Message } from '@/lib/types';
 import { timeAgo, formatXof } from '@/lib/format';
@@ -424,24 +424,23 @@ export function ChatWindow() {
       )}
     </div>
   );
-  // note : temps réel Supabase — messages sans rechargement.
-  // Le client SSR peut finir son bootstrap auth après le montage du composant.
-  // On écoute donc aussi les changements de session avant de rejoindre le channel.
+  // Temps réel : utiliser le client Realtime dédié, distinct du client SSR/cookies.
+  // La session reste gérée par le client SSR ; seul son access token est injecté
+  // dans le client WebSocket avant la souscription.
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
 
     const connect = async (accessToken: string | null) => {
       if (!accessToken || cancelled || channel) return;
 
-      supabase.realtime.setAuth(accessToken);
-
-      channel = supabase
-        .channel(`messages:\${id}`)
+      supabaseRealtime.realtime.setAuth(accessToken);
+      channel = supabaseRealtime
+        .channel(\`messages:\${id}\`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.\${id}` },
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: \`conversation_id=eq.\${id}\` },
           (payload: RealtimePostgresInsertPayload<Message>) => {
             const m = payload.new as Message;
             setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
@@ -479,7 +478,7 @@ export function ChatWindow() {
     return () => {
       cancelled = true;
       authSubscription?.unsubscribe();
-      if (channel) void supabase.removeChannel(channel);
+      if (channel) void supabaseRealtime.removeChannel(channel);
     };
   }, [id, user?.id]);
 
