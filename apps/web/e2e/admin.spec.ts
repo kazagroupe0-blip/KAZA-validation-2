@@ -16,7 +16,7 @@ test.describe('Console administration', () => {
     await login(page);
     await page.goto('/admin');
 
-    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Administration', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Utilisateurs' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Biens récents' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Journal d’administration' })).toBeVisible();
