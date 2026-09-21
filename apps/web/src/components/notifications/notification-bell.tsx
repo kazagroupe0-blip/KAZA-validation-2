@@ -10,7 +10,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/supabase-api';
-import { supabase } from '@/lib/supabase-client';
+import { supabase, supabaseRealtime } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { timeAgo } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
@@ -63,9 +63,13 @@ export function NotificationBell() {
     };
     window.addEventListener('kaza:notifications-refresh', onNotificationsRefresh);
 
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) supabaseRealtime.realtime.setAuth(session.access_token);
+    });
+
     // Notifications temps réel : insertions normales + résolution automatique
     // d'une alerte métier (ex. profil propriétaire complété).
-    const channel = supabase
+    const channel = supabaseRealtime
       .channel(`notifications:${user.id}`)
       .on(
         'postgres_changes',
@@ -92,7 +96,7 @@ export function NotificationBell() {
     return () => {
       mounted = false;
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
-      void supabase.removeChannel(channel);
+      void supabaseRealtime.removeChannel(channel);
     };
   }, [user]);
 
