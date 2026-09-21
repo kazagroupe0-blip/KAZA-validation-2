@@ -27,8 +27,8 @@ test.describe('Messagerie de bout en bout', () => {
 
     tenant.on('websocket', (ws) => {
       console.log(`[KAZA:WS] opened ${ws.url()}`);
-      ws.on('framesent', (frame) => console.log(`[KAZA:WS] sent frame bytes=${frame.length}`));
-      ws.on('framereceived', (frame) => console.log(`[KAZA:WS] received frame bytes=${frame.length}`));
+      ws.on('framesent', () => console.log('[KAZA:WS] sent frame'));
+      ws.on('framereceived', () => console.log('[KAZA:WS] received frame'));
       ws.on('close', () => console.log('[KAZA:WS] closed'));
       ws.on('socketerror', (error) => console.log(`[KAZA:WS] socketerror ${error}`));
     });
