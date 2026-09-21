@@ -10,13 +10,13 @@ export async function adminStats(): Promise<AdminStats> {
 }
 
 export async function adminListResidences(limit = 30): Promise<Residence[]> {
-  const { data, error } = await supabase
-    .from('residences')
-    .select('*, owner:profiles(id, full_name)')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const { data, error } = await supabase.rpc('list_admin_residences', {
+    p_limit: safeLimit,
+    p_offset: 0,
+  });
   if (error) throw normalizeError(error, 'Chargement impossible');
-  return (data ?? []) as Residence[];
+  return (data ?? []) as unknown as Residence[];
 }
 
 export async function adminListUsers(limit = 30): Promise<Profile[]> {
