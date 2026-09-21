@@ -9,8 +9,6 @@ import type { Database } from '../database.types';
 import { normalizeError } from '../supabase-api';
 import { requireUser } from '../require-user';
 
-const RESIDENCE_DIAGNOSTICS = process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1';
-
 export interface SearchParams {
   q?: string;
   city?: string;
@@ -172,16 +170,6 @@ export async function updateResidence(
   if (error) throw normalizeError(error, 'Mise à jour impossible');
   if (!data) throw new Error('Mise à jour impossible : résidence introuvable');
 
-  if (RESIDENCE_DIAGNOSTICS) {
-    console.log('[KAZA:RESIDENCE_DIAGNOSTIC] UPDATE_RETURN', JSON.stringify(data));
-    const { data: fetched, error: fetchError } = await supabase.rpc('get_residence', {
-      p_residence_id: id,
-    });
-    console.log(
-      '[KAZA:RESIDENCE_DIAGNOSTIC] GET_RESIDENCE_RETURN',
-      JSON.stringify({ data: fetched, error: fetchError }),
-    );
-  }
   if ('photos' in patch && Array.isArray(patch.photos) && data.photos.length !== patch.photos.length) {
     throw new Error('Mise à jour impossible : les photos n\'ont pas été enregistrées');
   }
@@ -190,21 +178,12 @@ export async function updateResidence(
 export async function submitResidenceForReview(id: string): Promise<ResidenceWithRelations> {
   const { error } = await supabase.rpc('submit_residence_for_review', { p_residence_id: id });
   if (error) {
-    if (RESIDENCE_DIAGNOSTICS) {
-      console.log('[KAZA:RESIDENCE_DIAGNOSTIC] SUBMIT_RPC_ERROR', JSON.stringify(error));
-    }
     throw normalizeError(error, 'Soumission impossible');
   }
 
   // La transition est DB-authoritative : relire l'état réellement persisté
   // plutôt que supposer que le state React local reflète déjà la transaction.
   const refreshed = await getResidence(id);
-  if (RESIDENCE_DIAGNOSTICS) {
-    console.log(
-      '[KAZA:RESIDENCE_DIAGNOSTIC] SUBMIT_RPC_RELOADED',
-      JSON.stringify(refreshed),
-    );
-  }
   return refreshed;
 }
 
