@@ -173,6 +173,88 @@ describe('RLS: residences table', () => {
       });
     }
 
+    it('approved residence becomes draft and unpublished after substantive owner edit', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+        photos: ['https://example.com/original.jpg'],
+      });
+      const landlord = getClient(landlordA);
+
+      const updated = await landlord
+        .from('residences')
+        .update({ title: 'Titre modifié après approbation' })
+        .eq('id', residenceId)
+        .select('title, is_published, is_verified, moderation_status, moderation_reason, moderated_at')
+        .single();
+
+      expect(updated.error).toBeNull();
+      expect(updated.data).toMatchObject({
+        title: 'Titre modifié après approbation',
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+        moderation_reason: null,
+        moderated_at: null,
+      });
+    });
+
+    it('landlord cannot directly mutate moderation_status or publication flags', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+      const landlord = getClient(landlordA);
+
+      const updated = await landlord
+        .from('residences')
+        .update({
+          is_published: true,
+          is_verified: true,
+          moderation_status: 'approved',
+        })
+        .eq('id', residenceId)
+        .select('is_published, is_verified, moderation_status')
+        .single();
+
+      expect(updated.error).toBeNull();
+      expect(updated.data).toMatchObject({
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+    });
+
+    it('non-admin cannot call the admin moderation RPC', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'pending',
+      });
+      const landlord = getClient(landlordA);
+
+      const result = await landlord.rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+
+      expect(result.error).toBeDefined();
+
+      const { data } = await landlord
+        .from('residences')
+        .select('is_published, is_verified, moderation_status')
+        .eq('id', residenceId)
+        .single();
+
+      expect(data).toMatchObject({
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'pending',
+      });
+    });
+
     it('landlord cannot directly publish; submission moves draft to pending', async () => {
       const residenceId = await createDraft();
       const clientLandlord = getClient(landlordA);
