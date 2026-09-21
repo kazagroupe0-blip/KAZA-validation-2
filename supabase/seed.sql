@@ -71,15 +71,16 @@ where u.email in ('locataire.demo@kaza.bj', 'bailleur.demo@kaza.bj', 'admin@kaza
 -- auth.users, donc on force le rôle ici avec un UPDATE sur conflit d'id)
 insert into public.profiles (id, email, phone, full_name, role, consent_apdp)
 values
-  ('00000000-0000-0000-0000-000000000001', 'locataire.demo@kaza.bj', '+2290100000001', 'Locataire Démo', 'locataire', true),
-  ('00000000-0000-0000-0000-000000000002', 'bailleur.demo@kaza.bj', '+2290100000002', 'Bailleur Démo', 'bailleur', true),
-  ('00000000-0000-0000-0000-000000000003', 'admin@kaza.bj', '+2290100000003', 'Admin KAZA', 'admin', true)
+  ('00000000-0000-0000-0000-000000000001', 'locataire.demo@kaza.bj', '+2290100000001', 'Locataire Démo', 'locataire', true, false),
+  ('00000000-0000-0000-0000-000000000002', 'bailleur.demo@kaza.bj', '+2290100000002', 'Bailleur Démo', 'bailleur', true, true),
+  ('00000000-0000-0000-0000-000000000003', 'admin@kaza.bj', '+2290100000003', 'Admin KAZA', 'admin', true, false)
 on conflict (id) do update set
   email = excluded.email,
   phone = excluded.phone,
   full_name = excluded.full_name,
   role = excluded.role,
-  consent_apdp = excluded.consent_apdp;
+  consent_apdp = excluded.consent_apdp,
+  is_premium = excluded.is_premium;
 
 -- Bien de démo du bailleur (publié + vérifié + géolocalisé) pour l'explorer/E2E
 insert into public.residences (id, owner_id, title, description, type, price_monthly,
