@@ -125,12 +125,12 @@ export default function EditResidencePage() {
         JSON.stringify({
           moderationStatus,
           moderationLabel,
-          residenceModerationStatus: residence.moderation_status ?? null,
+          residenceModerationStatus: residence?.moderation_status ?? null,
           rendered,
         }),
       );
     });
-  }, [moderationStatus, moderationLabel, residence.moderation_status]);
+  }, [moderationStatus, moderationLabel, residence?.moderation_status]);
 
   if (loading) {
     return (
