@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient, createBrowserClient } from '@supabase/ssr';
 import { env } from './env';
 import type { Database } from './database.types';
 
@@ -29,5 +29,15 @@ export const supabase = createBrowserClient<Database>(url, anonKey, {
   auth: {
     persistSession: true,
     userStorage: inMemoryStorage,
+  },
+});
+
+// Client Realtime dédié : aucun stockage de session et JWT injecté explicitement
+// avant chaque souscription. Cela évite de coupler le WebSocket à l’adaptateur
+// de cookies/mémoire du client SSR.
+export const supabaseRealtime = createClient<Database>(url, anonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
   },
 });
