@@ -290,12 +290,6 @@ export function ChatWindow() {
             />
           </p>
         </div>
-        {isLandlord && (
-          <Button variant="success" size="sm" className="ml-auto" onClick={() => setVisitModal(true)}>
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-            Valider une visite
-          </Button>
-        )}
         {!isLandlord && (
           <Button variant="primary" size="sm" className="ml-auto" onClick={() => setProposeModal(true)}>
             <Calendar className="h-3.5 w-3.5" aria-hidden />
