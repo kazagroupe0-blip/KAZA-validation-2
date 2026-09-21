@@ -236,13 +236,22 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<Profile>
     payload.bank_iban = payload.bank_iban.replace(/\s+/g, '').trim() || null;
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('profiles')
     .update(payload)
-    .eq('id', user.id)
-    .select('*')
-    .single();
+    .eq('id', user.id);
   if (error) throw normalizeError(error, 'Mise à jour impossible');
-  if (!data) throw new ApiError(500, 'Profil introuvable après la mise à jour');
-  return data;
+
+  // Le workflow de complétude est porté par un trigger AFTER UPDATE.
+  // Une clause RETURNING sur l'UPDATE initial peut donc refléter la ligne
+  // avant le recalcul du champ onboarding_completed. Relire la ligne après
+  // la transaction permet de retourner l'état réellement persisté.
+  const { data: persisted, error: persistedError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+  if (persistedError) throw normalizeError(persistedError, 'Profil introuvable après la mise à jour');
+  if (!persisted) throw new ApiError(500, 'Profil introuvable après la mise à jour');
+  return persisted;
 }
