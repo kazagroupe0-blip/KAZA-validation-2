@@ -108,6 +108,16 @@ export default function ProfilePage() {
       // donc l'état de cette soumission réussie côté UI au lieu de dépendre
       // d'un éventuel objet de profil transitoirement relu avant le prochain
       // rafraîchissement du contexte.
+      console.info('[KAZA_PROFILE_SAVE]', {
+        id: updatedProfile.id,
+        role: updatedProfile.role,
+        onboarding_completed: updatedProfile.onboarding_completed,
+        submittedProfileIsComplete,
+        phone: updatedProfile.phone,
+        business_name: updatedProfile.business_name,
+        momo_provider: updatedProfile.momo_provider,
+        momo_number: updatedProfile.momo_number,
+      });
       setUserProfile(updatedProfile);
       setSavedComplete(submittedProfileIsComplete);
       // L'état du contexte vient maintenant directement de la ligne sauvegardée.
