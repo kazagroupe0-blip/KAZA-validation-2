@@ -196,7 +196,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
         router.push(`/landlord/residences/${created.id}/edit`);
         return;
       }
-      router.push('/landlord');
+      router.push('/landlord/dashboard');
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) toast.error('Limite du plan gratuit', '1 bien en ligne pour le plan gratuit — passez au Premium.');
