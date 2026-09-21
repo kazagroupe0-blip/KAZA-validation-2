@@ -88,6 +88,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
+      console.log('[KAZA:PROFILE_DIAGNOSTIC] SAVE_START', JSON.stringify({ fullName, phone, businessName, momoProvider, momoNumber }));
       await updateProfile({
         full_name: fullName,
         phone,
@@ -102,6 +103,7 @@ export default function ProfilePage() {
             }
           : {}),
       });
+      console.log('[KAZA:PROFILE_DIAGNOSTIC] UPDATE_PROFILE_RESOLVED');
       if (user?.role === 'bailleur') {
         const candidate: Profile = {
           ...user,
