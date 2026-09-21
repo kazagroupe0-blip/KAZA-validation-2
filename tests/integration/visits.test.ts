@@ -50,6 +50,19 @@ describe('Visits: table & RLS', () => {
     });
     if (moderated.error) throw moderated.error;
 
+    const { data: approvedResidence, error: approvedResidenceError } = await supabaseAdmin
+      .from('residences')
+      .select('status, is_published, is_verified, moderation_status')
+      .eq('id', residenceId)
+      .single();
+    if (approvedResidenceError) throw approvedResidenceError;
+    expect(approvedResidence).toMatchObject({
+      status: 'libre',
+      is_published: true,
+      is_verified: true,
+      moderation_status: 'approved',
+    });
+
     const clientTenant = getClient(tenant);
     const { data: convId, error } = await clientTenant.rpc('open_conversation', { 
       p_residence_id: residenceId 
