@@ -1,6 +1,7 @@
 -- ============================================================
 -- KAZA.BJ — seed de démo (uniquement en local : supabase db reset)
 -- Comptes E2E/Playwright : locataire.demo@kaza.bj / bailleur.demo@kaza.bj
+-- et comptes isolés pour le scénario de visites.
 -- Mot de passe commun : KazaDemo2026!
 --
 -- ⚠️ GARDE ANTI-PROD (audit sécurité) : ce seed ne doit JAMAIS être
@@ -49,6 +50,16 @@ values
    '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
    'admin@kaza.bj', crypt('KazaDemo2026!', gen_salt('bf')), now(),
    '{"provider":"email","providers":["email"]}', '{"full_name":"Admin KAZA"}', now(), now(),
+   '', '', '', '', '', now()),
+  ('00000000-0000-0000-0000-000000000004',
+   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'visits.tenant.e2e@kaza.test', crypt('KazaDemo2026!', gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"full_name":"Locataire Visites E2E"}', now(), now(),
+   '', '', '', '', '', now()),
+  ('00000000-0000-0000-0000-000000000005',
+   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'visits.landlord.e2e@kaza.test', crypt('KazaDemo2026!', gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', '{"full_name":"Bailleur Visites E2E"}', now(), now(),
    '', '', '', '', '', now())
 on conflict (id) do nothing;
 
@@ -62,7 +73,13 @@ select
   now(), now(), now(),
   gen_random_uuid()
 from auth.users u
-where u.email in ('locataire.demo@kaza.bj', 'bailleur.demo@kaza.bj', 'admin@kaza.bj')
+where u.email in (
+  'locataire.demo@kaza.bj',
+  'bailleur.demo@kaza.bj',
+  'admin@kaza.bj',
+  'visits.tenant.e2e@kaza.test',
+  'visits.landlord.e2e@kaza.test'
+)
   and not exists (
     select 1 from auth.identities i where i.user_id = u.id and i.provider = 'email'
   );
@@ -73,7 +90,9 @@ insert into public.profiles (id, email, phone, full_name, role, consent_apdp, is
 values
   ('00000000-0000-0000-0000-000000000001', 'locataire.demo@kaza.bj', '+2290100000001', 'Locataire Démo', 'locataire', true, false),
   ('00000000-0000-0000-0000-000000000002', 'bailleur.demo@kaza.bj', '+2290100000002', 'Bailleur Démo', 'bailleur', true, true),
-  ('00000000-0000-0000-0000-000000000003', 'admin@kaza.bj', '+2290100000003', 'Admin KAZA', 'admin', true, false)
+  ('00000000-0000-0000-0000-000000000003', 'admin@kaza.bj', '+2290100000003', 'Admin KAZA', 'admin', true, false),
+  ('00000000-0000-0000-0000-000000000004', 'visits.tenant.e2e@kaza.test', '+2290100000004', 'Locataire Visites E2E', 'locataire', true, false),
+  ('00000000-0000-0000-0000-000000000005', 'visits.landlord.e2e@kaza.test', '+2290100000005', 'Bailleur Visites E2E', 'bailleur', true, true)
 on conflict (id) do update set
   email = excluded.email,
   phone = excluded.phone,
@@ -81,6 +100,12 @@ on conflict (id) do update set
   role = excluded.role,
   consent_apdp = excluded.consent_apdp,
   is_premium = excluded.is_premium;
+
+update public.profiles
+set business_name = 'KAZA Visites E2E',
+    momo_provider = 'mtn',
+    momo_number = '+2290100000005'
+where id = '00000000-0000-0000-0000-000000000005';
 
 -- Bien de démo du bailleur (publié + vérifié + géolocalisé) pour l'explorer/E2E
 insert into public.residences (id, owner_id, title, description, type, price_monthly,
@@ -95,6 +120,24 @@ values (
   'Rue des Pêcheurs', 'Cotonou', 'Fidjrossè',
   6.3486, 2.3855,
   st_setsrid(st_makepoint(2.3855, 6.3486), 4326)::geography,
+  'libre', true, true, 'approved'
+)
+on conflict (id) do nothing;
+
+-- Bien dédié au scénario visites E2E : isolé des autres scénarios et comptes
+-- pour éviter les collisions d'état et les rate-limits d'authentification.
+insert into public.residences (
+  id, owner_id, title, description, type, price_monthly, deposit,
+  bedrooms, bathrooms, surface, address, city, zone,
+  status, is_published, is_verified, moderation_status
+)
+values (
+  '00000000-0000-0000-0000-000000000104',
+  '00000000-0000-0000-0000-000000000005',
+  'Studio Visites E2E Haie Vive',
+  'Bien de démonstration dédié au scénario visites de bout en bout.',
+  'studio', 90000, 270000, 1, 1, 30,
+  'Rue des Visites E2E', 'Cotonou', 'Haie Vive',
   'libre', true, true, 'approved'
 )
 on conflict (id) do nothing;
