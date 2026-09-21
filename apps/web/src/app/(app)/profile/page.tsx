@@ -37,7 +37,7 @@ function missingLandlordFields(profile: Profile | null): string[] {
 }
 
 export default function ProfilePage() {
-  const { user, refresh } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const router = useRouter();
 
