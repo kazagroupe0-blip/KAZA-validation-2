@@ -134,7 +134,6 @@ export function ChatWindow() {
   // URLs signées pour les pièces jointes (bucket privé) — mises en cache
   // Résolues en parallèle par lots de 6 (pas de round-trip séquentiel).
   const [signedAttachments, setSignedAttachments] = useState<Record<string, string>>({});
-  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -623,7 +622,7 @@ export function ChatWindow() {
             <span
               data-testid="realtime-status"
               data-state={isConnected ? 'connected' : 'disconnected'}
-              data-error={realtimeError ?? ''}
+              data-error={realtimeError ?? undefined}
               className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-kaza-success' : 'bg-kaza-danger'}`}
               title={isConnected ? 'Connecté' : 'Déconnecté'}
             />
