@@ -164,7 +164,7 @@ grant execute on function public.propose_visit(uuid, jsonb) to authenticated;
 -- attached to the same request, preventing stale pending visits.
 create or replace function public.confirm_visit(
   p_visit_id uuid,
-  p_slot_index int default 0
+  p_slot_index int
 )
 returns void
 language plpgsql
