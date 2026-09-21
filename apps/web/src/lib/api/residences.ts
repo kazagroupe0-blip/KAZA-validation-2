@@ -124,19 +124,47 @@ export async function updateResidence(
   id: string,
   patch: Partial<ResidenceInput> & { status?: Residence['status']; is_published?: boolean },
 ): Promise<void> {
-  const geo =
-    patch.lat != null && patch.lng != null
-      ? { lat: patch.lat, lng: patch.lng }
-      : patch.city || patch.zone
-        ? await geocode(patch.city ?? '', patch.zone ?? '')
-        : null;
+  // Ne pas dépendre d'un géocodage réseau pour chaque édition. Nous relisons
+  // l'état géographique courant, préservons-le par défaut et ne géocodons que
+  // lorsque ville/quartier changent réellement.
+  const { data: current, error: currentError } = await supabase
+    .from('residences')
+    .select('city, zone, lat, lng, geom')
+    .eq('id', id)
+    .single();
+
+  if (currentError) throw normalizeError(currentError, 'Résidence introuvable');
+
+  let lat = current.lat ?? null;
+  let lng = current.lng ?? null;
+  let geom = current.geom ?? null;
+
+  if (patch.lat != null && patch.lng != null) {
+    lat = patch.lat;
+    lng = patch.lng;
+    geom = `SRID=4326;POINT(${patch.lng} ${patch.lat})`;
+  } else {
+    const locationChanged =
+      (patch.city !== undefined && patch.city !== current.city) ||
+      (patch.zone !== undefined && patch.zone !== current.zone);
+
+    if (locationChanged) {
+      const geo = await geocode(patch.city ?? current.city ?? '', patch.zone ?? current.zone ?? '');
+      if (geo) {
+        lat = geo.lat;
+        lng = geo.lng;
+        geom = `SRID=4326;POINT(${geo.lng} ${geo.lat})`;
+      }
+    }
+  }
+
   const { data, error } = await supabase
     .from('residences')
     .update({
       ...patch,
-      lat: geo?.lat ?? patch.lat ?? null,
-      lng: geo?.lng ?? patch.lng ?? null,
-      geom: geo ? `SRID=4326;POINT(${geo.lng} ${geo.lat})` : null,
+      lat,
+      lng,
+      geom,
     })
     .eq('id', id)
     .select('id, title, photos, is_published, is_verified, moderation_status, moderation_reason, moderated_at')
