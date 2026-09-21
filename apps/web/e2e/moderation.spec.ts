@@ -48,6 +48,11 @@ async function expectTitleVisibleInSearch(page: Page, title: string) {
 
 test.describe('Cycle de modération des résidences', () => {
   test('soumission → refus → resoumission → approbation → édition invalidante', async ({ page }) => {
+    page.on('console', (message) => {
+      if (message.text().includes('[KAZA:RESIDENCE_DIAGNOSTIC]')) {
+        console.log(`[KAZA:E2E_BROWSER] ${message.text()}`);
+      }
+    });
     // 1. Le bailleur prépare une annonce brouillon.
     await login(page, LANDLORD_EMAIL, LANDLORD_PW);
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
