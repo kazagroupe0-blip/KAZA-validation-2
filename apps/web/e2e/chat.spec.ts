@@ -35,10 +35,13 @@ test.describe('Messagerie de bout en bout', () => {
       await tenant.locator('article').first().click();
       await tenant.getByTestId('contact-owner').click();
       await expect(tenant).toHaveURL(/\/chat\//);
-      await expect.poll(
-        async () => tenant.getByTestId('realtime-status').getAttribute('data-state'),
-        { timeout: 15_000, message: async () => `Realtime: ${await tenant.getByTestId('realtime-status').getAttribute('data-error')}` },
-      ).toBe('connected');
+      const realtimeStatus = tenant.getByTestId('realtime-status');
+      try {
+        await expect(realtimeStatus).toHaveAttribute('data-state', 'connected', { timeout: 15_000 });
+      } catch (error) {
+        const realtimeError = await realtimeStatus.getAttribute('data-error');
+        throw new Error(`${error instanceof Error ? error.message : String(error)}\\nRealtime error: ${realtimeError || 'aucun détail'}`);
+      }
 
       // La conversation est ensuite utilisée comme un vrai échange.
       await tenant.getByLabel('Message').fill(tenantMessage);
