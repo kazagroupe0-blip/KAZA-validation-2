@@ -178,8 +178,7 @@ export interface ProfileUpdateInput {
 }
 
 export async function updateProfile(patch: ProfileUpdateInput): Promise<Profile> {
-  const user = await requireUser().catch(() => null);
-  if (!user) return;
+  const user = await requireUser();
 
   const payload = { ...patch };
 
