@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, CheckCheck, Calendar, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
 import {
@@ -23,8 +24,17 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import { env } from '@/lib/env';
 
 const STORAGE_MAX = 8 * 1024 * 1024;
+
+const realtimeClient = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
 
 export function ChatWindow() {
   const { id } = useParams<{ id: string }>();
@@ -58,20 +68,22 @@ export function ChatWindow() {
     void load();
   }, [load]);
 
-  // note : temps réel Supabase — les messages arrivent sans rechargement.
-  // Le token courant est explicitement transmis à Realtime afin que la
-  // session SSR/mémoire soit également utilisée pour l'autorisation RLS.
+  // Temps réel Supabase — client dédié pour découpler le WebSocket du
+  // client SSR/cookies utilisé pour les requêtes REST.
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channel: ReturnType<typeof realtimeClient.channel> | null = null;
     let cancelled = false;
     setIsConnected(false);
 
     void (async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session || cancelled) return;
+      if (!session || cancelled) {
+        console.warn('[kaza:realtime] session unavailable');
+        return;
+      }
 
-      supabase.realtime.setAuth(session.access_token);
-      channel = supabase
+      realtimeClient.realtime.setAuth(session.access_token);
+      channel = realtimeClient
         .channel(`messages:${id}`)
         .on(
           'postgres_changes',
@@ -84,14 +96,17 @@ export function ChatWindow() {
             }
           },
         )
-        .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES, err?: Error) => {
           setIsConnected(status === 'SUBSCRIBED');
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.error('[kaza:realtime] subscription failed', status, err?.message ?? '');
+          }
         });
     })();
 
     return () => {
       cancelled = true;
-      if (channel) void supabase.removeChannel(channel);
+      if (channel) void realtimeClient.removeChannel(channel);
     };
   }, [id, user?.id]);
 
