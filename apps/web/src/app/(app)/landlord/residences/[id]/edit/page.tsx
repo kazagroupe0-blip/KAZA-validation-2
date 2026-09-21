@@ -80,9 +80,24 @@ export default function EditResidencePage() {
         setModerationStatus(moderationStatus === 'approved' ? 'draft' : moderationStatus);
         toast.success('Annonce retirée', 'Elle n’est plus visible dans la recherche.');
       } else {
-        await submitResidenceForReview(id);
-        setPublished(false);
-        setModerationStatus('pending');
+        const refreshed = await submitResidenceForReview(id);
+        setResidence(refreshed);
+        setStatus(refreshed.status);
+        setPublished(refreshed.is_published);
+        setModerationStatus(
+          refreshed.moderation_status ??
+          (refreshed.is_verified ? 'approved' : refreshed.is_published ? 'pending' : 'draft'),
+        );
+        if (process.env.NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS === '1') {
+          console.log(
+            '[KAZA:RESIDENCE_DIAGNOSTIC] TOGGLE_SUBMIT_AUTHORITATIVE_STATE',
+            JSON.stringify({
+              is_published: refreshed.is_published,
+              is_verified: refreshed.is_verified,
+              moderation_status: refreshed.moderation_status,
+            }),
+          );
+        }
         toast.success('Annonce envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
       }
     } catch (err) {
