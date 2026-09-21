@@ -90,8 +90,8 @@ begin
   -- contradictory slots that are impossible to honor simultaneously.
   if exists (
     select 1
-      from jsonb_array_elements(p_slots) a
-      cross join jsonb_array_elements(p_slots) b
+      from jsonb_array_elements(p_slots) with ordinality a(value, ordinality)
+      cross join jsonb_array_elements(p_slots) with ordinality b(value, ordinality)
      where a.ordinality < b.ordinality
        and (a.value->>'start')::timestamptz < (b.value->>'end')::timestamptz
        and (b.value->>'start')::timestamptz < (a.value->>'end')::timestamptz
