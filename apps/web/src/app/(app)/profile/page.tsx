@@ -88,6 +88,15 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
+      const submittedProfileIsComplete =
+        user?.role === 'bailleur'
+        && fullName.trim().length >= 2
+        && /^\+229\d{10}$/.test(phone.replace(/\s+/g, ''))
+        && Boolean(user.email?.trim())
+        && businessName.trim().length > 0
+        && Boolean(momoProvider)
+        && /^\+229\d{10}$/.test(momoNumber.replace(/\s+/g, ''));
+
       const updatedProfile = await updateProfile({
         full_name: fullName,
         phone,
@@ -102,8 +111,13 @@ export default function ProfilePage() {
             }
           : {}),
       });
+
+      // updateProfile ne résout qu'après une mutation DB réussie. On conserve
+      // donc l'état de cette soumission réussie côté UI au lieu de dépendre
+      // d'un éventuel objet de profil transitoirement relu avant le prochain
+      // rafraîchissement du contexte.
       setUserProfile(updatedProfile);
-      setSavedComplete(missingLandlordFields(updatedProfile).length === 0);
+      setSavedComplete(submittedProfileIsComplete);
       // L'état du contexte vient maintenant directement de la ligne sauvegardée.
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
