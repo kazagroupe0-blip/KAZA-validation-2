@@ -44,10 +44,11 @@ describe('Visits: table & RLS', () => {
   async function setupConversation() {
     const residenceId = await createPublishedVerifiedResidence(landlord.user.id);
 
-    await supabaseAdmin.rpc('admin_moderate_residence', { 
-      p_residence_id: residenceId, 
-      p_action: 'approve' 
+    const moderated = await supabaseAdmin.rpc('admin_moderate_residence', {
+      p_residence_id: residenceId,
+      p_action: 'approve',
     });
+    if (moderated.error) throw moderated.error;
 
     const clientTenant = getClient(tenant);
     const { data: convId, error } = await clientTenant.rpc('open_conversation', { 
