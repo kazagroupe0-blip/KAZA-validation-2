@@ -135,7 +135,7 @@ test.describe('Cycle de modération des résidences', () => {
     await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Enregistrer les modifications' }).click();
-    await expect(page).toHaveURL(/\/landlord/);
+    await expect(page).toHaveURL(/\/landlord\/?$/);
 
     // 2. Soumission explicite à la modération.
     await page.goto(`/landlord/residences/${RESIDENCE_ID}/edit`);
