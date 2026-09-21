@@ -5,8 +5,14 @@ import { requireUser } from '../require-user';
 import type { MomoProvider } from './account';
 
 /** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
-function assertBeninPhone(phone: string): void {
+function normalizeBeninPhone(phone: string): string {
   const cleaned = phone.replace(/\s+/g, '');
+  if (/^\d{10}$/.test(cleaned)) return `+229${cleaned}`;
+  return cleaned;
+}
+
+function assertBeninPhone(phone: string): void {
+  const cleaned = normalizeBeninPhone(phone);
   if (!/^\+229\d{10}$/.test(cleaned)) {
     throw new ApiError(400, 'Numéro invalide — format attendu : +229 01 00 00 00 00');
   }
@@ -182,7 +188,7 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
   }
 
   if (typeof payload.phone === 'string') {
-    const cleaned = payload.phone.replace(/\s+/g, '');
+    const cleaned = normalizeBeninPhone(payload.phone);
     if (cleaned === '') {
       payload.phone = null;
     } else {
@@ -192,7 +198,7 @@ export async function updateProfile(patch: ProfileUpdateInput): Promise<void> {
   }
 
   if (typeof payload.momo_number === 'string') {
-    const cleaned = payload.momo_number.replace(/\s+/g, '');
+    const cleaned = normalizeBeninPhone(payload.momo_number);
     if (cleaned === '') {
       payload.momo_number = null;
     } else {
