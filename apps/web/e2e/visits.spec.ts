@@ -1,10 +1,10 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 
-const TENANT_EMAIL = process.env.E2E_TENANT_EMAIL ?? 'locataire.demo@kaza.bj';
-const TENANT_PW = process.env.E2E_TENANT_PW ?? 'KazaDemo2026!';
-const LANDLORD_EMAIL = process.env.E2E_LANDLORD_EMAIL ?? 'bailleur.demo@kaza.bj';
-const LANDLORD_PW = process.env.E2E_LANDLORD_PW ?? 'KazaDemo2026!';
-const VISIT_RESIDENCE_ID = '00000000-0000-0000-0000-000000000103';
+const TENANT_EMAIL = 'visits.tenant.e2e@kaza.test';
+const TENANT_PW = 'KazaDemo2026!';
+const LANDLORD_EMAIL = 'visits.landlord.e2e@kaza.test';
+const LANDLORD_PW = 'KazaDemo2026!';
+const VISIT_RESIDENCE_ID = '00000000-0000-0000-0000-000000000104';
 
 async function login(page: Page, email: string, password: string) {
   await page.goto('/login');
@@ -84,7 +84,7 @@ test.describe('Visites de bout en bout', () => {
       const conversation = landlord
         .getByTestId('conversation-list')
         .locator('button')
-        .filter({ hasText: 'Studio Chat E2E Haie Vive' })
+        .filter({ hasText: 'Studio Visites E2E Haie Vive' })
         .first();
       await expect(conversation).toBeVisible({ timeout: 15_000 });
       await conversation.click();
