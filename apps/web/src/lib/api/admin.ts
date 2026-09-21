@@ -20,11 +20,14 @@ export async function adminListResidences(limit = 30): Promise<Residence[]> {
     console.log(
       '[KAZA:RESIDENCE_DIAGNOSTIC] ADMIN_RESIDENCE_LIST',
       JSON.stringify(
-        (data ?? []).map((r: { id: string; title: string; moderation_status?: string }) => ({
-          id: r.id,
-          title: r.title,
-          moderation_status: r.moderation_status ?? null,
-        })),
+        (data ?? []).map((value) => {
+          const r = value as unknown as { id: string; title: string; moderation_status?: string };
+          return {
+            id: r.id,
+            title: r.title,
+            moderation_status: r.moderation_status ?? null,
+          };
+        }),
       ),
     );
   }
