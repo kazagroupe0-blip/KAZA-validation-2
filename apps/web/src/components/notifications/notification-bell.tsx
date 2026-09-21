@@ -42,6 +42,7 @@ export function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const liveNotificationsRef = useRef(new Map<string, AppNotification>());
 
   useEffect(() => {
     if (!user) return;
@@ -53,8 +54,26 @@ export function NotificationBell() {
         unreadNotificationsCount(),
       ]);
       if (!mounted) return;
-      setItems(list);
-      setUnread(count);
+
+      // Un INSERT Realtime peut arriver pendant le chargement HTTP initial.
+      // Ne jamais écraser cet événement local avec une réponse plus ancienne.
+      const mergedById = new Map(list.map((item) => [item.id, item]));
+      for (const [id, live] of liveNotificationsRef.current) {
+        if (!mergedById.has(id)) mergedById.set(id, live);
+      }
+
+      const merged = [...mergedById.values()]
+        .filter((item) => !item.resolved_at)
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+        .slice(0, 30);
+
+      const fetchedIds = new Set(list.map((item) => item.id));
+      const liveUnreadNotFetched = [...liveNotificationsRef.current.values()]
+        .filter((item) => !fetchedIds.has(item.id) && !item.read_at && !item.resolved_at)
+        .length;
+
+      setItems(merged);
+      setUnread(count + liveUnreadNotFetched);
     };
     void load();
 
@@ -86,7 +105,8 @@ export function NotificationBell() {
           (payload: RealtimePostgresInsertPayload<AppNotification>) => {
             const n = payload.new as AppNotification;
             if (n.resolved_at) return;
-            setItems((prev) => [n, ...prev].slice(0, 30));
+            liveNotificationsRef.current.set(n.id, n);
+            setItems((prev) => [n, ...prev.filter((item) => item.id !== n.id)].slice(0, 30));
             if (!n.read_at) setUnread((u) => u + 1);
           },
         )
@@ -96,6 +116,7 @@ export function NotificationBell() {
           (payload) => {
             const n = payload.new as AppNotification;
             if (!n.resolved_at) return;
+            liveNotificationsRef.current.delete(n.id);
             setItems((prev) => prev.filter((item) => item.id !== n.id));
             if (!n.read_at) setUnread((u) => Math.max(0, u - 1));
           },
