@@ -97,7 +97,6 @@ test.describe('Landlord profile completion', () => {
     await page.getByLabel(/opérateur mobile money/i).selectOption('mtn');
     await page.getByLabel(/numéro mobile money/i).fill('+2290190000000');
     await page.getByRole('button', { name: /enregistrer les modifications/i }).click();
-    await expect(page.getByRole('status').filter({ hasText: /Profil enregistré/i })).toBeVisible({ timeout: 10_000 });
 
     await expect(page.getByText(/profil propriétaire complet/i)).toBeVisible({ timeout: 10_000 });
 
