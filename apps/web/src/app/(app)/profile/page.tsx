@@ -52,6 +52,7 @@ export default function ProfilePage() {
   const [payouts, setPayouts] = useState<LandlordPayout[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedComplete, setSavedComplete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export default function ProfilePage() {
     && Boolean(momoProvider)
     && /^\+229\d{10}$/.test(momoNumber.replace(/\s+/g, ''));
   const landlordComplete = user?.role === 'bailleur'
-    && (user.onboarding_completed === true || formComplete);
+    && (user.onboarding_completed === true || formComplete || savedComplete);
 
   useEffect(() => {
     if (user?.role !== 'bailleur') return;
@@ -101,6 +102,17 @@ export default function ProfilePage() {
             }
           : {}),
       });
+      if (user?.role === 'bailleur') {
+        const candidate: Profile = {
+          ...user,
+          full_name: fullName.trim(),
+          phone: phone.replace(/\s+/g, ''),
+          business_name: businessName.trim() || null,
+          momo_provider: momoProvider || null,
+          momo_number: momoNumber.replace(/\s+/g, '') || null,
+        };
+        setSavedComplete(missingLandlordFields(candidate).length === 0);
+      }
       await refresh();
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
