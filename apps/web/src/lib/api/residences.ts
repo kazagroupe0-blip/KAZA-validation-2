@@ -159,9 +159,25 @@ export async function updateResidence(
   }
 }
 
-export async function submitResidenceForReview(id: string): Promise<void> {
+export async function submitResidenceForReview(id: string): Promise<ResidenceWithRelations> {
   const { error } = await supabase.rpc('submit_residence_for_review', { p_residence_id: id });
-  if (error) throw normalizeError(error, 'Soumission impossible');
+  if (error) {
+    if (RESIDENCE_DIAGNOSTICS) {
+      console.log('[KAZA:RESIDENCE_DIAGNOSTIC] SUBMIT_RPC_ERROR', JSON.stringify(error));
+    }
+    throw normalizeError(error, 'Soumission impossible');
+  }
+
+  // La transition est DB-authoritative : relire l'état réellement persisté
+  // plutôt que supposer que le state React local reflète déjà la transaction.
+  const refreshed = await getResidence(id);
+  if (RESIDENCE_DIAGNOSTICS) {
+    console.log(
+      '[KAZA:RESIDENCE_DIAGNOSTIC] SUBMIT_RPC_RELOADED',
+      JSON.stringify(refreshed),
+    );
+  }
+  return refreshed;
 }
 
 export async function withdrawResidencePublication(id: string): Promise<void> {
