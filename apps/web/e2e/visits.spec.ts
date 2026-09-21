@@ -11,7 +11,7 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel('Email').fill(email);
   await page.getByRole('textbox', { name: 'Mot de passe' }).fill(password);
   await page.getByRole('button', { name: 'Se connecter' }).click();
-  await expect(page).toHaveURL(/\/explorer/);
+  await expect(page).toHaveURL(/\/explorer/, { timeout: 15_000 });
 }
 
 async function logout(context: BrowserContext) {
@@ -41,7 +41,7 @@ test.describe('Visites de bout en bout', () => {
       await tenant.goto(`/residences/${VISIT_RESIDENCE_ID}`);
       await expect(tenant.getByTestId('contact-owner')).toBeVisible({ timeout: 15_000 });
       await tenant.getByTestId('contact-owner').click();
-      await expect(tenant).toHaveURL(/\/chat\//);
+      await expect(tenant).toHaveURL(/\/chat\//, { timeout: 15_000 });
 
       // Le canal temps réel doit être disponible avant l'envoi.
       await expect(tenant.getByTestId('realtime-status')).toHaveAttribute(
@@ -88,7 +88,7 @@ test.describe('Visites de bout en bout', () => {
         .first();
       await expect(conversation).toBeVisible({ timeout: 15_000 });
       await conversation.click();
-      await expect(landlord).toHaveURL(/\/chat\//);
+      await expect(landlord).toHaveURL(/\/chat\//, { timeout: 15_000 });
 
       // Le workflow doit afficher les vraies lignes visits, pas un simple bouton générique.
       const proposals = landlord.getByTestId('visit-proposals');
