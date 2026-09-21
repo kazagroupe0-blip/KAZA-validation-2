@@ -162,7 +162,8 @@ Original error=${error instanceof Error ? error.message : String(error)}`,
     // 3. L'admin refuse avec un motif obligatoire.
     await login(page, ADMIN_EMAIL, ADMIN_PW);
     await page.goto('/admin');
-    const row = page.locator('li').filter({ hasText: PENDING_TITLE }).first();
+    const moderationQueue = page.locator('section[aria-labelledby="moderation"]');
+    const row = moderationQueue.locator('li').filter({ hasText: PENDING_TITLE }).first();
     await expect(row).toBeVisible({ timeout: 15_000 });
 
     page.once('dialog', async (dialog) => {
@@ -171,7 +172,9 @@ Original error=${error instanceof Error ? error.message : String(error)}`,
     });
     await row.getByRole('button', { name: 'Refuser' }).click();
 
-    await expect(page.locator('li').filter({ hasText: PENDING_TITLE })).toHaveCount(0);
+    await expect(
+      moderationQueue.locator('li').filter({ hasText: PENDING_TITLE }),
+    ).toHaveCount(0);
 
     // 4. Après refus, la résidence reste invisible dans la recherche publique.
     await searchTitle(page, PENDING_TITLE);
