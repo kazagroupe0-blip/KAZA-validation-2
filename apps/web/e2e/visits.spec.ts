@@ -73,7 +73,7 @@ test.describe('Visites de bout en bout', () => {
 
       await modal.getByRole('button', { name: 'Proposer' }).click();
       await expect(modal).not.toBeVisible();
-      await expect(tenant.getByText(/Demande de visite/)).toBeVisible({ timeout: 10_000 });
+      await expect(tenant.getByText('📅 Demande de visite', { exact: true })).toBeVisible({ timeout: 10_000 });
       await expect(tenant.getByText('Visite proposée')).toBeVisible();
 
       // 2. Le bailleur retrouve cette même conversation dans sa propre session.
