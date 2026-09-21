@@ -3,6 +3,11 @@
 -- Proposal is atomic: validate conversation + slots, persist all visits,
 -- create one chat request and one landlord notification in the same transaction.
 
+-- The notification bell consumes INSERT events through Postgres Changes.
+-- Without publication membership the notification is persisted but cannot
+-- arrive in an already-open browser session.
+alter publication supabase_realtime add table public.notifications;
+
 create or replace function public.propose_visit(
   p_conversation_id uuid,
   p_slots jsonb
