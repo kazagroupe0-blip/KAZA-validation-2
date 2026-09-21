@@ -65,6 +65,7 @@ describe('RLS: conversations & messages tables', () => {
       zone: 'Haie Vive',
       is_published: true,
       is_verified: true,
+      moderation_status: 'approved',
     }).select('id').single();
     if (error) throw error;
     return data.id;
@@ -122,6 +123,44 @@ describe('RLS: conversations & messages tables', () => {
   });
 
   describe('conversations INSERT', () => {
+    it('opening the same residence twice reuses the same conversation', async () => {
+      const residenceId = await createPublishedVerifiedResidence(landlordA);
+      const first = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
+      const second = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
+
+      expect(first.error).toBeNull();
+      expect(second.error).toBeNull();
+      expect(second.data).toBe(first.data);
+    });
+
+    it('landlord cannot open a tenant conversation through the contact RPC', async () => {
+      const residenceId = await createPublishedVerifiedResidence(landlordA);
+      const result = await getClient(landlordB).rpc('open_conversation', { p_residence_id: residenceId });
+      expect(result.error).toBeDefined();
+    });
+
+    it('tenant cannot open a conversation for a non-free residence', async () => {
+      const { data, error } = await supabaseAdmin.from('residences').insert({
+        owner_id: landlordA.user.id,
+        title: `Occupied ${Date.now()}`,
+        type: 'appartement',
+        price_monthly: 100000,
+        deposit: 200000,
+        bedrooms: 2,
+        bathrooms: 1,
+        city: 'Cotonou',
+        zone: 'Haie Vive',
+        status: 'occupee',
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+      }).select('id').single();
+      if (error) throw error;
+
+      const result = await getClient(tenantA).rpc('open_conversation', { p_residence_id: data.id });
+      expect(result.error).toBeDefined();
+    });
+
     it('tenant CAN open conversation via RPC (not direct insert)', async () => {
       const residenceId = await createPublishedVerifiedResidence(landlordA);
       const { data: convId, error } = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
