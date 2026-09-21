@@ -84,7 +84,7 @@ on conflict (id) do update set
 -- Bien de démo du bailleur (publié + vérifié + géolocalisé) pour l'explorer/E2E
 insert into public.residences (id, owner_id, title, description, type, price_monthly,
                                deposit, bedrooms, bathrooms, surface, address, city, zone,
-                               lat, lng, geom, status, is_published, is_verified)
+                               lat, lng, geom, status, is_published, is_verified, moderation_status)
 values (
   '00000000-0000-0000-0000-000000000101',
   '00000000-0000-0000-0000-000000000002',
@@ -94,7 +94,7 @@ values (
   'Rue des Pêcheurs', 'Cotonou', 'Fidjrossè',
   6.3486, 2.3855,
   st_setsrid(st_makepoint(2.3855, 6.3486), 4326)::geography,
-  'libre', true, true
+  'libre', true, true, 'approved'
 )
 on conflict (id) do nothing;
 
