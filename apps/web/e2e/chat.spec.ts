@@ -35,6 +35,7 @@ test.describe('Messagerie de bout en bout', () => {
       await tenant.locator('article').first().click();
       await tenant.getByTestId('contact-owner').click();
       await expect(tenant).toHaveURL(/\/chat\//);
+      await expect(tenant.getByTestId('realtime-status')).toHaveAttribute('data-state', 'connected', { timeout: 15_000 });
 
       // La conversation est ensuite utilisée comme un vrai échange.
       await tenant.getByLabel('Message').fill(tenantMessage);
