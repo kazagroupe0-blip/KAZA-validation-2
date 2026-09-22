@@ -71,7 +71,6 @@ begin
        and r.is_published = true
        and r.is_verified = true
        and r.moderation_status = 'approved'
-       and r.status = 'libre'
   ) then
     raise exception 'Ce bien n''est plus disponible pour une visite' using errcode = 'P0001';
   end if;
@@ -219,6 +218,18 @@ begin
 
   if v_conv.landlord_id <> auth.uid() then
     raise exception 'Seul le bailleur confirme la visite' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1
+      from public.residences r
+     where r.id = v_conv.residence_id
+       and r.is_published = true
+       and r.is_verified = true
+       and r.moderation_status = 'approved'
+       and r.status = 'libre'
+  ) then
+    raise exception 'Ce bien n''est plus disponible pour confirmer cette visite' using errcode = 'P0001';
   end if;
 
   update public.visits
