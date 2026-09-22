@@ -1,4 +1,20 @@
 -- 20260921230000_visit_workflow_convergence.sql
+-- Publish notifications as a first-class Realtime event source. The chat UI
+-- uses visit notifications to converge its local conversation state without a
+-- browser reload when a database RPC creates the confirmation message.
+do $
+begin
+  if not exists (
+    select 1
+      from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'notifications'
+  ) then
+    alter publication supabase_realtime add table public.notifications;
+  end if;
+end $;
+
 -- Converge the web visit workflow on the canonical visits table/RPCs.
 -- Proposal is atomic: validate conversation + slots, persist all visits,
 -- create one chat request and one landlord notification in the same transaction.
