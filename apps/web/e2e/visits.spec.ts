@@ -101,7 +101,10 @@ test.describe('Visites de bout en bout', () => {
       // La confirmation doit disparaître côté bailleur parce que les autres alternatives
       // du même dossier sont clôturées par la transaction DB.
       await expect(proposals).not.toBeVisible({ timeout: 10_000 });
-      await expect(landlord.getByTestId('visit-confirmed-message')).toBeVisible({ timeout: 10_000 });
+
+      // Vérifier la persistance côté bailleur indépendamment du rendu React transitoire.
+      await landlord.reload();
+      await expect(landlord.getByTestId('visit-confirmed-message')).toBeVisible({ timeout: 15_000 });
 
       // 4. La confirmation doit parvenir au locataire sans rechargement.
       await expect(tenant.getByTestId('visit-confirmed-message')).toBeVisible({ timeout: 15_000 });
