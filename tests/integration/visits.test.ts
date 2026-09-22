@@ -180,6 +180,26 @@ describe('Visits: table & RLS', () => {
       slotStart.setMinutes(0, 0, 0);
       const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
 
+      const { data: stateBeforeProposal, error: stateError } = await supabaseAdmin
+        .from('residences')
+        .select('status, is_published, is_verified, moderation_status')
+        .eq(
+          'id',
+          (await supabaseAdmin
+            .from('conversations')
+            .select('residence_id')
+            .eq('id', conversationId)
+            .single()).data?.residence_id,
+        )
+        .single();
+      expect(stateError).toBeNull();
+      expect(stateBeforeProposal).toMatchObject({
+        status: 'libre',
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+      });
+
       const visitId = await proposeVisit(
         conversationId,
         [{ start: slotStart.toISOString(), end: slotEnd.toISOString() }],
