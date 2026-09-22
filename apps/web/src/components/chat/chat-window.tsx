@@ -364,7 +364,7 @@ export function ChatWindow() {
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
+      <div ref={scrollRef} data-testid="chat-thread" className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
         {loading && <p className="text-center text-sm text-kaza-faint">Chargement…</p>}
         {!loading && messages.length === 0 && (
           <p className="py-10 text-center text-sm text-kaza-faint">

@@ -79,6 +79,13 @@ test.describe('Messagerie de bout en bout', () => {
       await landlord.getByRole('button', { name: 'Envoyer' }).click();
       await expect(landlord.getByText(landlordMessage)).toBeVisible();
 
+      // Régression C1 : la réponse doit arriver dans le fil de la conversation
+      // (binding postgres_changes du ChatWindow), et pas seulement dans l'aperçu
+      // de la liste latérale, alimenté par un autre channel (`conversations-live`).
+      await expect(tenant.getByTestId('chat-thread').getByText(landlordMessage)).toBeVisible({
+        timeout: 15_000,
+      });
+
       // C'est l'assertion importante : la réponse arrive par Realtime.
       await expect(tenant.getByText(landlordMessage)).toBeVisible({ timeout: 15_000 });
     } finally {

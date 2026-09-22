@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { captureRealtimeWire } from './helpers/realtime-wire';
 
 const TENANT_EMAIL = 'visits.tenant.e2e@kaza.test';
 const TENANT_PW = 'KazaDemo2026!';
@@ -28,6 +29,7 @@ test.describe('Visites de bout en bout', () => {
     const landlordContext = await browser.newContext();
     const tenant = await tenantContext.newPage();
     const landlord = await landlordContext.newPage();
+    const tenantWire = captureRealtimeWire(tenant);
 
     const firstStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
     firstStart.setMinutes(0, 0, 0);
@@ -49,6 +51,18 @@ test.describe('Visites de bout en bout', () => {
         'connected',
         { timeout: 15_000 },
       );
+
+      // Régression C1 : le channel du chat doit souscrire ses deux bindings
+      // (UPDATE visits, INSERT messages) avec l'UUID réel de la conversation.
+      const conversationId = new URL(tenant.url()).pathname.split('/').pop() ?? '';
+      expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      const expectedFilter = `conversation_id=eq.${conversationId}`;
+      await expect
+        .poll(
+          () => tenantWire.joins.find((join) => join.topic === `realtime:messages:${conversationId}`)?.filters ?? [],
+          { timeout: 10_000 },
+        )
+        .toEqual([expectedFilter, expectedFilter]);
 
       await tenant.getByRole('button', { name: 'Proposer une visite' }).click();
       const modal = tenant.getByRole('dialog', { name: 'Proposer une visite' });
@@ -117,6 +131,10 @@ test.describe('Visites de bout en bout', () => {
       await expect(notificationPanel.getByText('Visite confirmée', { exact: true })).toBeVisible({
         timeout: 10_000,
       });
+
+      // 6. Aucune souscription Realtime du locataire n'a été rejetée pendant le parcours
+      // (un rejet arrive par un événement `system`, après SUBSCRIBED).
+      expect(tenantWire.systemErrors).toEqual([]);
     } finally {
       await logout(tenantContext);
       await tenantContext.close();
