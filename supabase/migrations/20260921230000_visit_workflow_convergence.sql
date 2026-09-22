@@ -283,7 +283,7 @@ $$;
 revoke execute on function public.confirm_visit(uuid, int) from public, anon;
 grant execute on function public.confirm_visit(uuid, int) to authenticated;
 
-do $kaza$$
+do $kaza$
 begin
   if not exists (
     select 1 from pg_proc p
