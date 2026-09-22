@@ -294,4 +294,4 @@ begin
   ) then
     raise exception 'propose_visit RPC absente après convergence';
   end if;
-end $$;
+end $kaza$;
