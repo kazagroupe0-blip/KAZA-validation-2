@@ -24,6 +24,14 @@ import { apiToast } from '@/lib/api-toast';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import {
+  INITIAL_REALTIME_HEALTH,
+  applySubscribeStatus,
+  applySystemEvent,
+  isRealtimeLive,
+  realtimeHealthError,
+  type RealtimeHealth,
+} from '@/lib/realtime-health';
 
 const STORAGE_MAX = 8 * 1024 * 1024;
 
@@ -72,6 +80,17 @@ export function ChatWindow() {
     let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
+    // note : SUBSCRIBED ne prouve que le join du channel. L'état affiché combine
+    // aussi le verdict `system` de la souscription PostgreSQL (realtime-health).
+    let health: RealtimeHealth = INITIAL_REALTIME_HEALTH;
+    const publish = (next: RealtimeHealth) => {
+      health = next;
+      // note : un channel déjà nettoyé (changement de conversation) ne doit plus
+      // écrire l'état du channel courant (ex. son CLOSED tardif).
+      if (cancelled) return;
+      setIsConnected(isRealtimeLive(next));
+      setRealtimeError(realtimeHealthError(next));
+    };
 
     const connect = (accessToken: string | null) => {
       if (!accessToken || cancelled || channel) return;
@@ -110,15 +129,19 @@ export function ChatWindow() {
             }
           },
         )
+        .on('system', {}, (payload: unknown) => {
+          const next = applySystemEvent(health, payload);
+          if (next.bindingError !== null && next.bindingError !== health.bindingError) {
+            console.error('[kaza:realtime] postgres_changes binding failed', next.bindingError);
+          }
+          publish(next);
+        })
         .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
-          setIsConnected(status === 'SUBSCRIBED');
-          if (status === 'SUBSCRIBED') {
-            setRealtimeError(null);
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            const detail = err instanceof Error ? err.message : String(err ?? status);
-            setRealtimeError(detail);
+          const detail = err instanceof Error ? err.message : String(err ?? status);
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             console.error('[kaza:realtime] subscription failed', status, detail);
           }
+          publish(applySubscribeStatus(health, status, detail));
         });
     };
 
