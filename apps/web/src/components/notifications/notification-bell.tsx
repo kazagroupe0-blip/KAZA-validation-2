@@ -187,7 +187,10 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={rootRef}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpen((o) => !o);
+          window.dispatchEvent(new Event('kaza:notifications-refresh'));
+        }}
         aria-label={`Notifications${unread > 0 ? ` (${unread} non lues)` : ''}`}
         aria-expanded={open}
         className="relative grid h-9 w-9 place-items-center rounded-kaza text-kaza-muted transition-colors hover:bg-kaza-surface hover:text-kaza-text"
