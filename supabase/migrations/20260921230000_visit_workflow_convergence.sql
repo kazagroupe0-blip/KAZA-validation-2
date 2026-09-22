@@ -98,7 +98,15 @@ begin
        and r.is_verified = true
        and r.moderation_status = 'approved'
   ) then
-    raise exception 'Ce bien n''est plus disponible pour une visite' using errcode = 'P0001';
+    declare
+      v_dbg public.residences%rowtype;
+    begin
+      select * into v_dbg from public.residences where id = v_conv.residence_id;
+      raise exception 'VISIT_DEBUG id=% owner=% status=% published=% verified=% moderation=%',
+        v_conv.residence_id, v_dbg.owner_id, v_dbg.status,
+        v_dbg.is_published, v_dbg.is_verified, v_dbg.moderation_status
+        using errcode = 'P0001';
+    end;
   end if;
 
   if jsonb_typeof(p_slots) <> 'array'
