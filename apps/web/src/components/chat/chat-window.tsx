@@ -334,7 +334,11 @@ export function ChatWindow() {
           </p>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={cn('flex', isOwn(m) ? 'justify-end' : 'justify-start')}>
+          <div
+            key={m.id}
+            data-testid={m.kind === 'visit_agreed' ? 'visit-confirmed-message' : undefined}
+            className={cn('flex', isOwn(m) ? 'justify-end' : 'justify-start')}
+          >
             <div
               className={cn(
                 'max-w-[82%] rounded-kaza px-3.5 py-2.5 text-sm leading-relaxed',
