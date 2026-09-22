@@ -177,7 +177,7 @@ begin
        and schemaname = 'public'
        and tablename = 'visits'
   ) then
-    alter publication supabase_realtime add table public.visits;
+    execute 'alter publication supabase_realtime add table public.visits';
   end if;
 end $;
 
