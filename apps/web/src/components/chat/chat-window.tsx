@@ -78,14 +78,14 @@ export function ChatWindow() {
 
       supabaseRealtime.realtime.setAuth(accessToken);
       channel = supabaseRealtime
-        .channel(`messages:\${id}`)
+        .channel(`messages:${id}`)
         .on(
           'postgres_changes',
           {
             event: 'UPDATE',
             schema: 'public',
             table: 'visits',
-            filter: `conversation_id=eq.\${id}`,
+            filter: `conversation_id=eq.${id}`,
           },
           (payload) => {
             const visit = payload.new as { status?: string };
@@ -100,7 +100,7 @@ export function ChatWindow() {
             event: 'INSERT',
             schema: 'public',
             table: 'messages',
-            filter: `conversation_id=eq.\${id}`,
+            filter: `conversation_id=eq.${id}`,
           },
           (payload: RealtimePostgresInsertPayload<Message>) => {
             const m = payload.new as Message;
