@@ -3,10 +3,30 @@
 -- Proposal is atomic: validate conversation + slots, persist all visits,
 -- create one chat request and one landlord notification in the same transaction.
 
--- The notification bell consumes INSERT events through Postgres Changes.
--- Without publication membership the notification is persisted but cannot
--- arrive in an already-open browser session.
-alter publication supabase_realtime add table public.notifications;
+-- Publish business events consumed by already-open participant sessions.
+-- Idempotent so the migration is safe if either table is already published.
+do $
+begin
+  if not exists (
+    select 1
+      from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'notifications'
+  ) then
+    execute 'alter publication supabase_realtime add table public.notifications';
+  end if;
+
+  if not exists (
+    select 1
+      from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'visits'
+  ) then
+    execute 'alter publication supabase_realtime add table public.visits';
+  end if;
+end $;
 
 create or replace function public.propose_visit(
   p_conversation_id uuid,
@@ -165,21 +185,6 @@ $$;
 
 revoke execute on function public.propose_visit(uuid, jsonb) from public, anon;
 grant execute on function public.propose_visit(uuid, jsonb) to authenticated;
-
--- Publish visit state transitions so participant clients can react immediately
--- to confirmation/cancellation and then reload the authoritative chat state.
-do $
-begin
-  if not exists (
-    select 1
-      from pg_publication_tables
-     where pubname = 'supabase_realtime'
-       and schemaname = 'public'
-       and tablename = 'visits'
-  ) then
-    execute 'alter publication supabase_realtime add table public.visits';
-  end if;
-end $;
 
 -- Canonical confirmation now also closes the alternative proposed slots
 -- attached to the same request, preventing stale pending visits.
