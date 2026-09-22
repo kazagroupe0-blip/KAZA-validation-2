@@ -55,6 +55,7 @@ describe('Visits: table & RLS', () => {
       is_published: true,
       is_verified: true,
       moderation_status: 'approved',
+      status: 'libre',
     });
 
     const clientTenant = getClient(tenant);
