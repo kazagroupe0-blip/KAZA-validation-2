@@ -166,6 +166,21 @@ $$;
 revoke execute on function public.propose_visit(uuid, jsonb) from public, anon;
 grant execute on function public.propose_visit(uuid, jsonb) to authenticated;
 
+-- Publish visit state transitions so participant clients can react immediately
+-- to confirmation/cancellation and then reload the authoritative chat state.
+do $
+begin
+  if not exists (
+    select 1
+      from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'visits'
+  ) then
+    alter publication supabase_realtime add table public.visits;
+  end if;
+end $;
+
 -- Canonical confirmation now also closes the alternative proposed slots
 -- attached to the same request, preventing stale pending visits.
 create or replace function public.confirm_visit(
