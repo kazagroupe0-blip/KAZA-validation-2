@@ -82,6 +82,21 @@ export function ChatWindow() {
         .on(
           'postgres_changes',
           {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'visits',
+            filter: `conversation_id=eq.\${id}`,
+          },
+          (payload) => {
+            const visit = payload.new as { status?: string };
+            if (visit.status === 'confirmed' || visit.status === 'cancelled') {
+              void load();
+            }
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
             event: 'INSERT',
             schema: 'public',
             table: 'messages',
