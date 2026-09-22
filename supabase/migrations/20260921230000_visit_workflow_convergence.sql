@@ -1,8 +1,10 @@
 -- 20260921230000_visit_workflow_convergence.sql
--- Publish visit state + notification events to Realtime. The chat UI
--- subscribes to both so a database RPC can converge the local state without a
--- browser reload.
-do $
+-- Canonical visit workflow: tenant proposal -> persisted visits -> landlord
+-- confirmation -> tenant notification.
+-- The proposal transaction validates the current public availability of the
+-- residence and keeps all side effects atomic.
+
+do $$
 begin
   if not exists (
     select 1
@@ -23,36 +25,8 @@ begin
   ) then
     alter publication supabase_realtime add table public.notifications;
   end if;
-end $;
-
--- Converge the web visit workflow on the canonical visits table/RPCs.
--- Proposal is atomic: validate conversation + slots, persist all visits,
--- create one chat request and one landlord notification in the same transaction.
-
--- Publish business events consumed by already-open participant sessions.
--- Idempotent so the migration is safe if either table is already published.
-do $kaza$
-begin
-  if not exists (
-    select 1
-      from pg_publication_tables
-     where pubname = 'supabase_realtime'
-       and schemaname = 'public'
-       and tablename = 'notifications'
-  ) then
-    execute 'alter publication supabase_realtime add table public.notifications';
-  end if;
-
-  if not exists (
-    select 1
-      from pg_publication_tables
-     where pubname = 'supabase_realtime'
-       and schemaname = 'public'
-       and tablename = 'visits'
-  ) then
-    execute 'alter publication supabase_realtime add table public.visits';
-  end if;
-end $kaza$;
+end
+$$;
 
 create or replace function public.propose_visit(
   p_conversation_id uuid,
@@ -65,6 +39,7 @@ set search_path = public
 as $$
 declare
   v_conv public.conversations%rowtype;
+  v_res public.residences%rowtype;
   v_slot jsonb;
   v_start timestamptz;
   v_end timestamptz;
@@ -77,7 +52,8 @@ begin
     raise exception 'Vous devez être connecté' using errcode = '28000';
   end if;
 
-  select * into v_conv
+  select *
+    into v_conv
     from public.conversations
    where id = p_conversation_id
    for update;
@@ -90,23 +66,25 @@ begin
     raise exception 'Seul le locataire peut proposer une visite' using errcode = '42501';
   end if;
 
-  if not exists (
-    select 1
-      from public.residences r
-     where r.id = v_conv.residence_id
-       and r.is_published = true
-       and r.is_verified = true
-       and r.moderation_status = 'approved'
+  -- Lock the residence while validating availability so the decision cannot
+  -- become stale between validation and insertion.
+  select *
+    into v_res
+    from public.residences
+   where id = v_conv.residence_id
+   for update;
+
+  if v_res.id is null then
+    raise exception 'Bien introuvable' using errcode = 'P0002';
+  end if;
+
+  if not (
+    v_res.is_published
+    and v_res.is_verified
+    and v_res.moderation_status = 'approved'
+    and v_res.status = 'libre'
   ) then
-    declare
-      v_dbg public.residences%rowtype;
-    begin
-      select * into v_dbg from public.residences where id = v_conv.residence_id;
-      raise exception 'VISIT_DEBUG id=% owner=% status=% published=% verified=% moderation=%',
-        v_conv.residence_id, v_dbg.owner_id, v_dbg.status,
-        v_dbg.is_published, v_dbg.is_verified, v_dbg.moderation_status
-        using errcode = 'P0001';
-    end;
+    raise exception 'Ce bien n''est plus disponible pour une visite' using errcode = 'P0001';
   end if;
 
   if jsonb_typeof(p_slots) <> 'array'
@@ -115,7 +93,9 @@ begin
   end if;
 
   -- Validate every slot before writing anything.
-  for v_slot in select value from jsonb_array_elements(p_slots)
+  for v_slot in
+    select value
+      from jsonb_array_elements(p_slots)
   loop
     if jsonb_typeof(v_slot) <> 'object'
        or not (v_slot ? 'start')
@@ -145,8 +125,6 @@ begin
     v_count := v_count + 1;
   end loop;
 
-  -- Reject overlapping alternatives: otherwise the landlord could receive
-  -- contradictory slots that are impossible to honor simultaneously.
   if exists (
     select 1
       from jsonb_array_elements(p_slots) with ordinality a(value, ordinality)
@@ -158,7 +136,6 @@ begin
     raise exception 'Les créneaux proposés ne doivent pas se chevaucher' using errcode = '22023';
   end if;
 
-  -- Prevent a second active proposal while one is still waiting.
   if exists (
     select 1
       from public.visits v
@@ -168,39 +145,59 @@ begin
     raise exception 'Une proposition de visite est déjà en attente' using errcode = 'P0001';
   end if;
 
-  -- Persist all alternatives atomically.
-  for v_slot in select value from jsonb_array_elements(p_slots)
+  for v_slot in
+    select value
+      from jsonb_array_elements(p_slots)
   loop
     v_start := (v_slot->>'start')::timestamptz;
     v_end := (v_slot->>'end')::timestamptz;
 
     insert into public.visits (
-      conversation_id, proposed_by, slot_start, slot_end, status
+      conversation_id,
+      proposed_by,
+      slot_start,
+      slot_end,
+      status
     )
     values (
-      p_conversation_id, auth.uid(), v_start, v_end, 'proposed'
+      p_conversation_id,
+      auth.uid(),
+      v_start,
+      v_end,
+      'proposed'
     )
     returning id into v_id;
 
     v_ids := array_append(v_ids, v_id);
 
     v_body := v_body ||
-      case when v_body = '' then '' else E'\n' end ||
+      case when v_body = '' then '' else E'\\n' end ||
       '📅 ' ||
       to_char(v_start at time zone 'Africa/Porto-Novo', 'DD/MM/YYYY à HH24:MI') ||
       ' → ' ||
       to_char(v_end at time zone 'Africa/Porto-Novo', 'HH24:MI');
   end loop;
 
-  insert into public.messages (conversation_id, sender_id, body, kind)
+  insert into public.messages (
+    conversation_id,
+    sender_id,
+    body,
+    kind
+  )
   values (
     p_conversation_id,
     auth.uid(),
-    'Demande de visite' || E'\n' || v_body,
+    'Demande de visite' || E'\\n' || v_body,
     'visit_request'
   );
 
-  insert into public.notifications (user_id, type, title, body, data)
+  insert into public.notifications (
+    user_id,
+    type,
+    title,
+    body,
+    data
+  )
   values (
     v_conv.landlord_id,
     'visit',
@@ -219,8 +216,6 @@ $$;
 revoke execute on function public.propose_visit(uuid, jsonb) from public, anon;
 grant execute on function public.propose_visit(uuid, jsonb) to authenticated;
 
--- Canonical confirmation now also closes the alternative proposed slots
--- attached to the same request, preventing stale pending visits.
 create or replace function public.confirm_visit(
   p_visit_id uuid,
   p_slot_index int
@@ -234,9 +229,11 @@ declare
   v_visit public.visits%rowtype;
   v_conv public.conversations%rowtype;
 begin
-  select * into v_visit
+  select *
+    into v_visit
     from public.visits
-   where id = p_visit_id;
+   where id = p_visit_id
+   for update;
 
   if v_visit.id is null then
     raise exception 'Visite introuvable' using errcode = 'P0002';
@@ -246,26 +243,22 @@ begin
     raise exception 'Visite déjà traitée' using errcode = 'P0001';
   end if;
 
-  select * into v_conv
+  select *
+    into v_conv
     from public.conversations
-   where id = v_visit.conversation_id;
+   where id = v_visit.conversation_id
+   for update;
+
+  if v_conv.id is null then
+    raise exception 'Conversation introuvable' using errcode = 'P0002';
+  end if;
 
   if v_conv.landlord_id <> auth.uid() then
     raise exception 'Seul le bailleur confirme la visite' using errcode = '42501';
   end if;
 
-  if not exists (
-    select 1
-      from public.residences r
-     where r.id = v_conv.residence_id
-       and r.is_published = true
-       and r.is_verified = true
-       and r.moderation_status = 'approved'
-       and r.status = 'libre'
-  ) then
-    raise exception 'Ce bien n''est plus disponible pour confirmer cette visite' using errcode = 'P0001';
-  end if;
-
+  -- The selected visit is the canonical slot. The other alternatives from
+  -- this proposal become cancelled and can no longer be confirmed.
   update public.visits
      set status = 'confirmed',
          confirmed_by = auth.uid(),
@@ -277,7 +270,6 @@ begin
     raise exception 'Visite déjà traitée' using errcode = 'P0001';
   end if;
 
-  -- Other alternatives from the same pending request are no longer valid.
   update public.visits
      set status = 'cancelled'
    where conversation_id = v_visit.conversation_id
@@ -285,7 +277,12 @@ begin
      and status = 'proposed'
      and id <> p_visit_id;
 
-  insert into public.messages (conversation_id, sender_id, body, kind)
+  insert into public.messages (
+    conversation_id,
+    sender_id,
+    body,
+    kind
+  )
   values (
     v_visit.conversation_id,
     auth.uid(),
@@ -294,7 +291,13 @@ begin
     'visit_agreed'
   );
 
-  insert into public.notifications (user_id, type, title, body, data)
+  insert into public.notifications (
+    user_id,
+    type,
+    title,
+    body,
+    data
+  )
   values (
     v_conv.tenant_id,
     'visit',
@@ -317,15 +320,18 @@ $$;
 revoke execute on function public.confirm_visit(uuid, int) from public, anon;
 grant execute on function public.confirm_visit(uuid, int) to authenticated;
 
-do $kaza$
+do $$
 begin
   if not exists (
-    select 1 from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public'
-      and p.proname = 'propose_visit'
-      and pg_get_function_identity_arguments(p.oid) = 'p_conversation_id uuid, p_slots jsonb'
+    select 1
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'propose_visit'
+       and pg_get_function_identity_arguments(p.oid) =
+           'p_conversation_id uuid, p_slots jsonb'
   ) then
     raise exception 'propose_visit RPC absente après convergence';
   end if;
-end $kaza$;
+end
+$$;
