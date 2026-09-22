@@ -5,7 +5,7 @@
 
 -- Publish business events consumed by already-open participant sessions.
 -- Idempotent so the migration is safe if either table is already published.
-do $
+do $kaza$
 begin
   if not exists (
     select 1
@@ -26,7 +26,7 @@ begin
   ) then
     execute 'alter publication supabase_realtime add table public.visits';
   end if;
-end $;
+end $kaza$;
 
 create or replace function public.propose_visit(
   p_conversation_id uuid,
@@ -283,7 +283,7 @@ $$;
 revoke execute on function public.confirm_visit(uuid, int) from public, anon;
 grant execute on function public.confirm_visit(uuid, int) to authenticated;
 
-do $$
+do $kaza$$
 begin
   if not exists (
     select 1 from pg_proc p
