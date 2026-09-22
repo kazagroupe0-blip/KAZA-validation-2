@@ -101,10 +101,10 @@ test.describe('Visites de bout en bout', () => {
       // La confirmation doit disparaître côté bailleur parce que les autres alternatives
       // du même dossier sont clôturées par la transaction DB.
       await expect(proposals).not.toBeVisible({ timeout: 10_000 });
-      await expect(landlord.getByText(/Visite confirmée pour le/)).toBeVisible({ timeout: 10_000 });
+      await expect(landlord.getByTestId('visit-confirmed-message')).toBeVisible({ timeout: 10_000 });
 
       // 4. La confirmation doit parvenir au locataire sans rechargement.
-      await expect(tenant.getByText(/Visite confirmée pour le/)).toBeVisible({ timeout: 15_000 });
+      await expect(tenant.getByTestId('visit-confirmed-message')).toBeVisible({ timeout: 15_000 });
 
       // 5. La notification métier doit également être présente.
       const bell = tenant.getByRole('button', { name: /^Notifications(?: \(\d+ non lues\))?$/i });
