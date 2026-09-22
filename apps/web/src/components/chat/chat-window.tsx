@@ -110,18 +110,6 @@ export function ChatWindow() {
             }
           },
         )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'visits',
-            filter: `conversation_id=eq.\${id}`,
-          },
-          () => {
-            void load();
-          },
-        )
         .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
           setIsConnected(status === 'SUBSCRIBED');
           if (status === 'SUBSCRIBED') {
