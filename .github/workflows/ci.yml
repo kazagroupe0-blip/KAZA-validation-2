@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - "hardening/**"
+      - validation/run-full-20260923
   workflow_dispatch:
 
 concurrency:
