@@ -426,6 +426,7 @@ jobs:
           retention-days: 7
 
       - name: Realtime C1 diagnostic (fresh database)
+        if: ${{ always() }}
         id: c1
         continue-on-error: true
         env:
