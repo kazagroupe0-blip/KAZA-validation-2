@@ -1,5 +1,12 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
-import { captureRealtimeWire } from './helpers/realtime-wire';
+import {
+  buildC1Report,
+  captureRealtimeWire,
+  openC1Probes,
+  probesReady,
+  realtimeEnv,
+  signInRealUser,
+} from './helpers/realtime-wire';
 
 const TENANT_EMAIL = 'visits.tenant.e2e@kaza.test';
 const TENANT_PW = 'KazaDemo2026!';
@@ -136,6 +143,128 @@ test.describe('Visites de bout en bout', () => {
       // (un rejet arrive par un événement `system`, après SUBSCRIBED).
       expect(tenantWire.systemErrors).toEqual([]);
     } finally {
+      await logout(tenantContext);
+      await tenantContext.close();
+      await landlordContext.close();
+    }
+  });
+});
+
+function dateTimeLocalValue(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${h}:${min}`;
+}
+
+// Diagnostic C1 (opt-in : E2E_REALTIME_DIAG=1, base fraîchement réinitialisée,
+// à lancer seul : `--grep "Diagnostic Realtime C1"`). Le bailleur confirme par
+// l'interface, avec sa vraie session : c'est l'UPDATE réel de `visits`. Trois
+// sondes Node (session réelle du locataire, clé anon) et la capture du fil de
+// la page comparent les chemins ; le rapport est joint au test.
+test.describe('Diagnostic Realtime C1 — visites', () => {
+  test('C1 : UPDATE visits (confirmed) reçu par chaque chemin', async ({ browser }, testInfo) => {
+    test.skip(process.env.E2E_REALTIME_DIAG !== '1', 'Diagnostic C1 opt-in : E2E_REALTIME_DIAG=1');
+    test.skip(testInfo.project.name !== 'chromium', 'Diagnostic exécuté une seule fois (chromium)');
+    const env = realtimeEnv();
+    if (!env) {
+      throw new Error('[KAZA:C1] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (ou E2E_SUPABASE_*) requis');
+    }
+
+    // Session réelle du locataire (clé anon + mot de passe), jamais service_role.
+    const tenantSession = await signInRealUser(env, TENANT_EMAIL, TENANT_PW);
+    const tenantContext = await browser.newContext();
+    const landlordContext = await browser.newContext();
+    const tenant = await tenantContext.newPage();
+    const landlord = await landlordContext.newPage();
+    const tenantWire = captureRealtimeWire(tenant);
+    const probes: ReturnType<typeof openC1Probes> = [];
+
+    const start = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    start.setMinutes(0, 0, 0);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+    try {
+      await login(tenant, TENANT_EMAIL, TENANT_PW);
+      await tenant.goto(`/residences/${VISIT_RESIDENCE_ID}`);
+      await expect(tenant.getByTestId('contact-owner')).toBeVisible({ timeout: 15_000 });
+      await tenant.getByTestId('contact-owner').click();
+      await expect(tenant).toHaveURL(/\/chat\//, { timeout: 15_000 });
+      await expect(tenant.getByTestId('realtime-status')).toHaveAttribute('data-state', 'connected', {
+        timeout: 15_000,
+      });
+      const conversationId = new URL(tenant.url()).pathname.split('/').pop() ?? '';
+      expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+      probes.push(...openC1Probes(env, tenantSession, 'visits', 'UPDATE', conversationId));
+      // note : on n'échoue pas ici — une sonde non prête rend le verdict « inconclusive ».
+      await expect
+        .poll(() => probesReady(probes), { timeout: 15_000 })
+        .toBe(true)
+        .catch(() => undefined);
+
+      // Le locataire propose un créneau par l'interface (ligne visits à confirmer).
+      await tenant.getByRole('button', { name: 'Proposer une visite' }).click();
+      const modal = tenant.getByRole('dialog', { name: 'Proposer une visite' });
+      await expect(modal).toBeVisible();
+      const dateInputs = modal.locator('input[type="datetime-local"]');
+      await dateInputs.nth(0).fill(dateTimeLocalValue(start));
+      await dateInputs.nth(1).fill(dateTimeLocalValue(end));
+      await modal.getByRole('button', { name: 'Proposer' }).click();
+      await expect(modal).not.toBeVisible();
+
+      // UPDATE réel : le bailleur confirme par l'interface, avec sa propre session.
+      await login(landlord, LANDLORD_EMAIL, LANDLORD_PW);
+      await landlord.goto(`/chat/${conversationId}`);
+      const proposals = landlord.getByTestId('visit-proposals');
+      await expect(proposals).toBeVisible({ timeout: 15_000 });
+      await proposals.getByRole('button', { name: 'Confirmer' }).first().click();
+      await expect(proposals).not.toBeVisible({ timeout: 10_000 });
+
+      const isTarget = (record: Record<string, unknown>) =>
+        record.conversation_id === conversationId && record.status === 'confirmed';
+      const confirmed = tenant.getByTestId('visit-confirmed-message');
+      const snapshot = async () =>
+        buildC1Report({
+          scenario: 'visits: UPDATE visits status=confirmed (bailleur → locataire)',
+          conversationId,
+          table: 'visits',
+          type: 'UPDATE',
+          predicate: isTarget,
+          wire: tenantWire,
+          probes,
+          browserDom: await confirmed.isVisible(),
+        });
+      // Fenêtre d'observation : jusqu'à ce que tous les chemins aient reçu, ou 15 s.
+      await expect
+        .poll(
+          async () => {
+            const { observation } = await snapshot();
+            return (
+              observation.browserDom &&
+              observation.browserWire &&
+              observation.filteredDedicated &&
+              observation.unfilteredDedicated &&
+              observation.filteredSession
+            );
+          },
+          { timeout: 15_000 },
+        )
+        .toBe(true)
+        .catch(() => undefined);
+
+      const report = await snapshot();
+      console.log(`[KAZA:C1] ${JSON.stringify(report)}`);
+      await testInfo.attach('c1-visits-diagnostic.json', {
+        body: JSON.stringify(report, null, 2),
+        contentType: 'application/json',
+      });
+      expect(report.verdict, `${report.meaning} ${JSON.stringify(report.observation)}`).toBe('no-reproduction');
+    } finally {
+      await Promise.all(probes.map((probe) => probe.close()));
+      await tenantSession.client.auth.signOut().catch(() => undefined);
       await logout(tenantContext);
       await tenantContext.close();
       await landlordContext.close();

@@ -1,4 +1,12 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import {
+  buildC1Report,
+  captureRealtimeWire,
+  openC1Probes,
+  probesReady,
+  realtimeEnv,
+  signInRealUser,
+} from './helpers/realtime-wire';
 
 const TENANT_EMAIL = process.env.E2E_TENANT_EMAIL ?? 'locataire.demo@kaza.bj';
 const TENANT_PW = process.env.E2E_TENANT_PW ?? 'KazaDemo2026!';
@@ -89,6 +97,105 @@ test.describe('Messagerie de bout en bout', () => {
       // C'est l'assertion importante : la réponse arrive par Realtime.
       await expect(tenant.getByText(landlordMessage)).toBeVisible({ timeout: 15_000 });
     } finally {
+      await logout(tenantContext);
+      await tenantContext.close();
+      await landlordContext.close();
+    }
+  });
+});
+
+// Diagnostic C1 (opt-in : E2E_REALTIME_DIAG=1, base fraîchement réinitialisée).
+// Le bailleur envoie la réponse par l'interface, avec sa vraie session : c'est
+// l'INSERT réel. Trois sondes Node (session réelle du locataire, clé anon) et la
+// capture du fil de la page comparent les chemins ; le rapport est joint au test.
+test.describe('Diagnostic Realtime C1 — messagerie', () => {
+  test('C1 : INSERT messages reçu par chaque chemin', async ({ browser }, testInfo) => {
+    test.skip(process.env.E2E_REALTIME_DIAG !== '1', 'Diagnostic C1 opt-in : E2E_REALTIME_DIAG=1');
+    test.skip(testInfo.project.name !== 'chromium', 'Diagnostic exécuté une seule fois (chromium)');
+    const env = realtimeEnv();
+    if (!env) {
+      throw new Error('[KAZA:C1] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (ou E2E_SUPABASE_*) requis');
+    }
+
+    // Session réelle du locataire (clé anon + mot de passe), jamais service_role.
+    const tenantSession = await signInRealUser(env, TENANT_EMAIL, TENANT_PW);
+    const tenantContext = await browser.newContext();
+    const landlordContext = await browser.newContext();
+    const tenant = await tenantContext.newPage();
+    const landlord = await landlordContext.newPage();
+    const tenantWire = captureRealtimeWire(tenant);
+    const probes: ReturnType<typeof openC1Probes> = [];
+    const landlordMessage = `C1 diagnostic ${Date.now()}`;
+
+    try {
+      await login(tenant, TENANT_EMAIL, TENANT_PW);
+      await tenant.goto(`/residences/${CHAT_RESIDENCE_ID}`);
+      await expect(tenant.getByTestId('contact-owner')).toBeVisible({ timeout: 15_000 });
+      await tenant.getByTestId('contact-owner').click();
+      await expect(tenant).toHaveURL(/\/chat\//);
+      await expect(tenant.getByTestId('realtime-status')).toHaveAttribute('data-state', 'connected', {
+        timeout: 15_000,
+      });
+      const conversationId = new URL(tenant.url()).pathname.split('/').pop() ?? '';
+      expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+      probes.push(...openC1Probes(env, tenantSession, 'messages', 'INSERT', conversationId));
+      // note : on n'échoue pas ici — une sonde non prête rend le verdict « inconclusive ».
+      await expect
+        .poll(() => probesReady(probes), { timeout: 15_000 })
+        .toBe(true)
+        .catch(() => undefined);
+
+      // INSERT réel : le bailleur répond par l'interface, avec sa propre session.
+      await login(landlord, LANDLORD_EMAIL, LANDLORD_PW);
+      await landlord.goto(`/chat/${conversationId}`);
+      await expect(landlord.getByLabel('Message')).toBeVisible({ timeout: 15_000 });
+      await landlord.getByLabel('Message').fill(landlordMessage);
+      await landlord.getByRole('button', { name: 'Envoyer' }).click();
+      await expect(landlord.getByText(landlordMessage)).toBeVisible({ timeout: 15_000 });
+
+      const isTarget = (record: Record<string, unknown>) =>
+        record.body === landlordMessage && record.conversation_id === conversationId;
+      const thread = tenant.getByTestId('chat-thread').getByText(landlordMessage);
+      const snapshot = async () =>
+        buildC1Report({
+          scenario: 'chat: INSERT messages (bailleur → locataire)',
+          conversationId,
+          table: 'messages',
+          type: 'INSERT',
+          predicate: isTarget,
+          wire: tenantWire,
+          probes,
+          browserDom: await thread.isVisible(),
+        });
+      // Fenêtre d'observation : jusqu'à ce que tous les chemins aient reçu, ou 15 s.
+      await expect
+        .poll(
+          async () => {
+            const { observation } = await snapshot();
+            return (
+              observation.browserDom &&
+              observation.browserWire &&
+              observation.filteredDedicated &&
+              observation.unfilteredDedicated &&
+              observation.filteredSession
+            );
+          },
+          { timeout: 15_000 },
+        )
+        .toBe(true)
+        .catch(() => undefined);
+
+      const report = await snapshot();
+      console.log(`[KAZA:C1] ${JSON.stringify(report)}`);
+      await testInfo.attach('c1-chat-diagnostic.json', {
+        body: JSON.stringify(report, null, 2),
+        contentType: 'application/json',
+      });
+      expect(report.verdict, `${report.meaning} ${JSON.stringify(report.observation)}`).toBe('no-reproduction');
+    } finally {
+      await Promise.all(probes.map((probe) => probe.close()));
+      await tenantSession.client.auth.signOut().catch(() => undefined);
       await logout(tenantContext);
       await tenantContext.close();
       await landlordContext.close();
