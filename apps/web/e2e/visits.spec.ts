@@ -180,7 +180,7 @@ test.describe('Diagnostic Realtime C1 — visites', () => {
     const tenant = await tenantContext.newPage();
     const landlord = await landlordContext.newPage();
     const tenantWire = captureRealtimeWire(tenant);
-    const probes: ReturnType<typeof openC1Probes> = [];
+    const probes: Awaited<ReturnType<typeof openC1Probes>> = [];
 
     const start = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     start.setMinutes(0, 0, 0);
