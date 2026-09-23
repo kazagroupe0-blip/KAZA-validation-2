@@ -10,7 +10,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/supabase-api';
-import { supabase, supabaseRealtime } from '@/lib/supabase-client';
+import { supabase } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { timeAgo } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
@@ -91,7 +91,7 @@ export function NotificationBell() {
     window.addEventListener('kaza:notifications-refresh', onNotificationsRefresh);
 
     // Notifications temps réel — même règle : setAuth doit être terminé avant le join.
-    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
     let connecting = false;
@@ -101,10 +101,10 @@ export function NotificationBell() {
       connecting = true;
 
       try {
-        await supabaseRealtime.realtime.setAuth(accessToken);
+        await supabase.realtime.setAuth(accessToken);
         if (cancelled) return;
 
-        channel = supabaseRealtime
+        channel = supabase
           .channel(`notifications:${user.id}`)
           .on(
             'postgres_changes',
@@ -149,7 +149,7 @@ export function NotificationBell() {
       authSubscription?.unsubscribe();
       mounted = false;
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
-      if (channel) void supabaseRealtime.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [user?.id]);
 
