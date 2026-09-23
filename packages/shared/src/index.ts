@@ -1,4 +1,13 @@
 export * from './types';
 export * from './utils';
 export * from './tokens';
-export type { Database, Json } from './database.types';
+export { Constants } from './database.types';
+export type {
+  CompositeTypes,
+  Database,
+  Enums,
+  Json,
+  Tables,
+  TablesInsert,
+  TablesUpdate,
+} from './database.types';
