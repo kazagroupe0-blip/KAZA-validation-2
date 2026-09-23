@@ -121,7 +121,7 @@ test.describe('Diagnostic Realtime C1 — messagerie', () => {
     const tenant = await tenantContext.newPage();
     const landlord = await landlordContext.newPage();
     const tenantWire = captureRealtimeWire(tenant);
-    const probes: ReturnType<typeof openC1Probes> = [];
+    const probes: Awaited<ReturnType<typeof openC1Probes>> = [];
     const landlordMessage = `C1 diagnostic ${Date.now()}`;
 
     try {
