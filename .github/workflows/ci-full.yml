@@ -2,6 +2,9 @@ name: CI Full
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - validation/run-full-20260923
   push:
     branches:
       - validation/run-full-20260923
