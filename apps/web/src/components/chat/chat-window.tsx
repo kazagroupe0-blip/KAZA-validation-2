@@ -2,27 +2,36 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Check, CheckCheck, Calendar, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, Calendar, Paperclip, Send, X } from 'lucide-react';
 import {
   listMessages,
   sendMessage,
   markConversationRead,
-  agreeVisit,
+  confirmVisit,
+  declineVisit,
+  listVisits,
   getConversation,
   getSignedStorageUrl,
   proposeVisit,
 } from '@/lib/supabase-api';
 import { VisitProposalModal } from './VisitProposalModal';
 import { useAuth } from '@/lib/auth-context';
-import { supabase, supabaseRealtime } from '@/lib/supabase-client';
+import { supabase } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload, REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
-import type { ConversationWithRelations, Message } from '@/lib/types';
+import type { ConversationWithRelations, Message, Visit } from '@/lib/types';
 import { timeAgo, formatXof } from '@/lib/format';
 import { apiToast } from '@/lib/api-toast';
 import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import {
+  INITIAL_REALTIME_HEALTH,
+  applySubscribeStatus,
+  applySystemEvent,
+  isRealtimeLive,
+  realtimeHealthError,
+  type RealtimeHealth,
+} from '@/lib/realtime-health';
 
 const STORAGE_MAX = 8 * 1024 * 1024;
 
@@ -37,7 +46,7 @@ export function ChatWindow() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [visitModal, setVisitModal] = useState(false);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [proposeModal, setProposeModal] = useState(false);
   const [isLandlord, setIsLandlord] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -46,9 +55,14 @@ export function ChatWindow() {
 
   const load = useCallback(async () => {
     try {
-      const [list, conv] = await Promise.all([listMessages(id), getConversation(id)]);
+      const [list, conv, visitList] = await Promise.all([
+        listMessages(id),
+        getConversation(id),
+        listVisits(id),
+      ]);
       setMessages(list);
       setConversation(conv);
+      setVisits(visitList);
     } catch {
       toast.error('Chargement de la conversation impossible');
     } finally {
@@ -60,63 +74,97 @@ export function ChatWindow() {
     void load();
   }, [load]);
 
-  // Temps réel Supabase — client dédié, authentifié avec la session du
-  // client SSR. Le listener auth couvre la course de bootstrap de session.
+  // Temps réel Supabase — le client dédié doit terminer setAuth() avant le join.
   useEffect(() => {
-    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
+    let connecting = false;
+    let health: RealtimeHealth = INITIAL_REALTIME_HEALTH;
 
-    const connect = (accessToken: string | null) => {
-      if (!accessToken || cancelled || channel) return;
+    const publish = (next: RealtimeHealth) => {
+      health = next;
+      if (cancelled) return;
+      setIsConnected(isRealtimeLive(next));
+      setRealtimeError(realtimeHealthError(next));
+    };
 
-      supabaseRealtime.realtime.setAuth(accessToken);
-      channel = supabaseRealtime
-        .channel(`messages:\${id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `conversation_id=eq.\${id}`,
-          },
-          (payload: RealtimePostgresInsertPayload<Message>) => {
-            const m = payload.new as Message;
-            setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
-            if (m.sender_id !== user?.id) {
-              void markConversationRead(id).catch(() => undefined);
+    const connect = async (accessToken: string | null) => {
+      if (!accessToken || cancelled || channel || connecting) return;
+      connecting = true;
+
+      try {
+        await supabase.realtime.setAuth(accessToken);
+        if (cancelled) return;
+
+        channel = supabase
+          .channel(`messages:${id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'visits',
+              filter: `conversation_id=eq.${id}`,
+            },
+            (payload) => {
+              const visit = payload.new as { status?: string };
+              if (visit.status === 'confirmed' || visit.status === 'cancelled') {
+                void load();
+              }
+            },
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'messages',
+              filter: `conversation_id=eq.${id}`,
+            },
+            (payload: RealtimePostgresInsertPayload<Message>) => {
+              const m = payload.new as Message;
+              setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+              if (m.sender_id !== user?.id) {
+                void markConversationRead(id).catch(() => undefined);
+              }
+            },
+          )
+          .on('system', {}, (payload: unknown) => {
+            const next = applySystemEvent(health, payload);
+            if (next.bindingError !== null && next.bindingError !== health.bindingError) {
+              console.error('[kaza:realtime] postgres_changes binding failed', next.bindingError);
             }
-          },
-        )
-        .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
-          setIsConnected(status === 'SUBSCRIBED');
-          if (status === 'SUBSCRIBED') {
-            setRealtimeError(null);
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            publish(next);
+          })
+          .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
             const detail = err instanceof Error ? err.message : String(err ?? status);
-            setRealtimeError(detail);
-            console.error('[kaza:realtime] subscription failed', status, detail);
-          }
-        });
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              console.error('[kaza:realtime] subscription failed', status, detail);
+            }
+            publish(applySubscribeStatus(health, status, detail));
+          });
+      } finally {
+        connecting = false;
+      }
     };
 
     setIsConnected(false);
     setRealtimeError(null);
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!cancelled) connect(session?.access_token ?? null);
+      if (!cancelled) void connect(session?.access_token ?? null);
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!cancelled && session) connect(session.access_token);
+      if (!cancelled && session) void connect(session.access_token);
     });
     authSubscription = data.subscription;
 
     return () => {
       cancelled = true;
       authSubscription?.unsubscribe();
-      if (channel) void supabaseRealtime.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [id, user?.id]);
 
@@ -208,15 +256,32 @@ export function ChatWindow() {
     return urls;
   }
 
-  async function handleVisit(agreed: boolean) {
-    setVisitModal(false);
+  function formatVisitSlot(start: string, end: string): string {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    return startDate.toLocaleDateString('fr-FR') + ' à ' +
+      startDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) +
+      ' → ' +
+      endDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function handleConfirmVisit(visitId: string) {
     try {
-      await agreeVisit(id, agreed);
-      toast.success(agreed ? 'Visite confirmée' : 'Visite refusée');
-      // RPC agree_visit already inserts a system message (kind='visit_agreed' or 'system')
-      // Do NOT pre-fill the input to avoid duplicate message if user clicks send
-    } catch {
-      toast.error('Action impossible');
+      await confirmVisit(visitId);
+      toast.success('Visite confirmée');
+      await load();
+    } catch (err) {
+      apiToast(toast, err, 'Confirmation impossible');
+    }
+  }
+
+  async function handleDeclineVisit(visitId: string) {
+    try {
+      await declineVisit(visitId);
+      toast.success('Proposition refusée');
+      await load();
+    } catch (err) {
+      apiToast(toast, err, 'Refus impossible');
     }
   }
 
@@ -225,7 +290,7 @@ export function ChatWindow() {
     try {
       await proposeVisit(id, slots);
       toast.success('Visite proposée');
-      // The proposeVisit RPC/insert will create a visit_request message
+      await load();
     } catch {
       toast.error('Proposition impossible');
     }
@@ -267,12 +332,6 @@ export function ChatWindow() {
             />
           </p>
         </div>
-        {isLandlord && (
-          <Button variant="success" size="sm" className="ml-auto" onClick={() => setVisitModal(true)}>
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-            Valider une visite
-          </Button>
-        )}
         {!isLandlord && (
           <Button variant="primary" size="sm" className="ml-auto" onClick={() => setProposeModal(true)}>
             <Calendar className="h-3.5 w-3.5" aria-hidden />
@@ -281,8 +340,35 @@ export function ChatWindow() {
         )}
       </div>
 
+      {/* Demandes de visite en attente : la confirmation porte sur une ligne visits réelle. */}
+      {isLandlord && visits.some((visit) => visit.status === 'proposed') && (
+        <div data-testid="visit-proposals" className="border-b border-kaza-border bg-kaza-brand/[0.04] px-4 py-3">
+          <p className="text-sm font-semibold text-kaza-text">Demandes de visite en attente</p>
+          <div className="mt-2 space-y-2">
+            {visits
+              .filter((visit) => visit.status === 'proposed')
+              .map((visit) => (
+                <div key={visit.id} className="flex flex-col gap-2 rounded-kaza border border-kaza-border bg-kaza-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-kaza-text">{formatVisitSlot(visit.slot_start, visit.slot_end)}</p>
+                    <p className="text-xs text-kaza-faint">Proposé par le locataire</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => void handleDeclineVisit(visit.id)}>
+                      Refuser
+                    </Button>
+                    <Button size="sm" onClick={() => void handleConfirmVisit(visit.id)}>
+                      Confirmer
+                    </Button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
+      <div ref={scrollRef} data-testid="chat-thread" className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
         {loading && <p className="text-center text-sm text-kaza-faint">Chargement…</p>}
         {!loading && messages.length === 0 && (
           <p className="py-10 text-center text-sm text-kaza-faint">
@@ -290,7 +376,11 @@ export function ChatWindow() {
           </p>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={cn('flex', isOwn(m) ? 'justify-end' : 'justify-start')}>
+          <div
+            key={m.id}
+            data-testid={m.kind === 'visit_agreed' ? 'visit-confirmed-message' : undefined}
+            className={cn('flex', isOwn(m) ? 'justify-end' : 'justify-start')}
+          >
             <div
               className={cn(
                 'max-w-[82%] rounded-kaza px-3.5 py-2.5 text-sm leading-relaxed',
@@ -396,22 +486,6 @@ export function ChatWindow() {
           <Send className="h-4 w-4" aria-hidden />
         </Button>
       </form>
-
-      {/* Modale de validation de visite (bailleur) */}
-      <Modal open={visitModal} onClose={() => setVisitModal(false)} title="Valider une visite">
-        <p className="text-sm leading-relaxed text-kaza-muted">
-          Confirmez au locataire que vous acceptez la visite. Le bien passera en statut « En visite »
-          jusqu’à votre décision.
-        </p>
-        <div className="mt-5 flex gap-3">
-          <Button variant="secondary" className="flex-1" onClick={() => void handleVisit(false)}>
-            Refuser
-          </Button>
-          <Button className="flex-1" onClick={() => void handleVisit(true)}>
-            Confirmer la visite
-          </Button>
-        </div>
-      </Modal>
 
       {/* Modale proposition de visite (locataire) */}
       {proposeModal && (

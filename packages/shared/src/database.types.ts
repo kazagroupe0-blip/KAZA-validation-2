@@ -1523,6 +1523,10 @@ export type Database = {
       }
       postgis_version: { Args: never; Returns: string }
       postgis_wagyu_version: { Args: never; Returns: string }
+      propose_visit: {
+        Args: { p_conversation_id: string; p_slots: Json }
+        Returns: string[]
+      }
       report_cash_payment: {
         Args: {
           p_amount: number

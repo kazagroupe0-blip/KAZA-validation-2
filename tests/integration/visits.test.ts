@@ -44,14 +44,23 @@ describe('Visits: table & RLS', () => {
   async function setupConversation() {
     const residenceId = await createPublishedVerifiedResidence(landlord.user.id);
 
-    await supabaseAdmin.rpc('admin_moderate_residence', { 
-      p_residence_id: residenceId, 
-      p_action: 'approve' 
+    const { data: canonicalResidence, error: residenceError } = await supabaseAdmin
+      .from('residences')
+      .select('status, is_published, is_verified, moderation_status')
+      .eq('id', residenceId)
+      .single();
+    if (residenceError) throw residenceError;
+    expect(canonicalResidence).toMatchObject({
+      status: 'libre',
+      is_published: true,
+      is_verified: true,
+      moderation_status: 'approved',
+      status: 'libre',
     });
 
     const clientTenant = getClient(tenant);
-    const { data: convId, error } = await clientTenant.rpc('open_conversation', { 
-      p_residence_id: residenceId 
+    const { data: convId, error } = await clientTenant.rpc('open_conversation', {
+      p_residence_id: residenceId,
     });
     if (error) throw error;
     return convId;
@@ -71,6 +80,7 @@ describe('Visits: table & RLS', () => {
       zone: 'Haie Vive',
       is_published: true,
       is_verified: true,
+      moderation_status: 'approved',
     }).select('id').single();
     if (error) throw error;
     return data.id;
@@ -81,13 +91,17 @@ describe('Visits: table & RLS', () => {
       const clientTenant = getClient(tenant);
       const conversationId = await setupConversation();
 
+      const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      slotStart.setMinutes(0, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
+
       const { data, error } = await clientTenant
         .from('visits')
         .insert({
           conversation_id: conversationId,
           proposed_by: tenant.user.id,
-          slot_start: '2026-08-20 14:00:00+00',
-          slot_end: '2026-08-20 16:00:00+00',
+          slot_start: slotStart.toISOString(),
+          slot_end: slotEnd.toISOString(),
           status: 'proposed',
         })
         .select()
@@ -107,13 +121,17 @@ describe('Visits: table & RLS', () => {
       const conversationId = await setupConversation();
 
       // Create a proposed visit directly
+      const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      slotStart.setMinutes(0, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
+
       const { data: visit, error: visitError } = await supabaseAdmin
         .from('visits')
         .insert({
           conversation_id: conversationId,
           proposed_by: tenant.user.id,
-          slot_start: '2026-08-20 14:00:00+00',
-          slot_end: '2026-08-20 16:00:00+00',
+          slot_start: slotStart.toISOString(),
+          slot_end: slotEnd.toISOString(),
           status: 'proposed',
         })
         .select()
@@ -150,15 +168,75 @@ describe('Visits: table & RLS', () => {
       // Client Node authentifié avec la vraie session du locataire :
       // aucun singleton navigateur, aucun mock et aucun bypass.
       const tenantClient = getClient(tenant);
-      const { error: sessionError } = await tenantClient.auth.setSession(tenant.session);
-      expect(sessionError).toBeNull();
+      const slotStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      slotStart.setMinutes(0, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000);
+
+      const { data: stateBeforeProposal, error: stateError } = await supabaseAdmin
+        .from('residences')
+        .select('status, is_published, is_verified, moderation_status')
+        .eq(
+          'id',
+          (await supabaseAdmin
+            .from('conversations')
+            .select('residence_id')
+            .eq('id', conversationId)
+            .single()).data?.residence_id,
+        )
+        .single();
+      expect(stateError).toBeNull();
+      expect(stateBeforeProposal).toMatchObject({
+        status: 'libre',
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+      });
 
       const visitId = await proposeVisit(
         conversationId,
-        [{ start: '2026-08-20T14:00:00Z', end: '2026-08-20T16:00:00Z' }],
+        [{ start: slotStart.toISOString(), end: slotEnd.toISOString() }],
         tenantClient,
       );
       expect(visitId).toBeDefined();
+
+      const { data: visit, error: visitError } = await supabaseAdmin
+        .from('visits')
+        .select('conversation_id, proposed_by, status, slot_start, slot_end')
+        .eq('id', visitId)
+        .single();
+      expect(visitError).toBeNull();
+      expect(visit).toMatchObject({
+        conversation_id: conversationId,
+        proposed_by: tenant.user.id,
+        status: 'proposed',
+      });
+
+      const { data: messages, error: messageError } = await supabaseAdmin
+        .from('messages')
+        .select('kind, body, sender_id')
+        .eq('conversation_id', conversationId)
+        .eq('kind', 'visit_request')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      expect(messageError).toBeNull();
+      expect(messages?.[0]).toMatchObject({
+        kind: 'visit_request',
+        sender_id: tenant.user.id,
+      });
+
+      const { data: notifications, error: notificationError } = await supabaseAdmin
+        .from('notifications')
+        .select('type, title, data')
+        .eq('user_id', landlord.user.id)
+        .eq('type', 'visit')
+        .contains('data', { conversation_id: conversationId })
+        .order('created_at', { ascending: false })
+        .limit(1);
+      expect(notificationError).toBeNull();
+      expect(notifications?.[0]).toMatchObject({
+        type: 'visit',
+        title: 'Nouvelle demande de visite',
+      });
     });
   });
 });

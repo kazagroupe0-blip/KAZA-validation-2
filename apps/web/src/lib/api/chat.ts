@@ -70,6 +70,14 @@ export async function markConversationRead(conversationId: string): Promise<void
     .is('read_at', null);
 }
 
+export async function confirmVisit(visitId: string): Promise<void> {
+  const { error } = await supabase.rpc('confirm_visit', {
+    p_visit_id: visitId,
+    p_slot_index: 0,
+  });
+  if (error) throw normalizeError(error, 'Confirmation de la visite impossible');
+}
+
 export async function agreeVisit(
   conversationId: string,
   agreed: boolean,
@@ -104,20 +112,22 @@ export async function proposeVisit(
   slots: { start: string; end: string }[],
   client: SupabaseClient = supabase,
 ): Promise<string> {
-  const user = await requireUser(client);
-  const visitPromises = slots.map(slot =>
-    client.from('visits').insert({
-      conversation_id: conversationId,
-      proposed_by: user.id,
-      slot_start: slot.start,
-      slot_end: slot.end,
-      status: 'proposed',
-    }).select('id').single()
-  );
-  const results = await Promise.all(visitPromises);
-  const first = results[0];
-  if (first.error) throw normalizeError(first.error, 'Proposition impossible');
-  return first.data.id;
+  await requireUser(client);
+
+  if (slots.length < 1 || slots.length > 3) {
+    throw new Error('Choisissez entre 1 et 3 créneaux');
+  }
+
+  const { data, error } = await client.rpc('propose_visit', {
+    p_conversation_id: conversationId,
+    p_slots: slots,
+  });
+  if (error) throw normalizeError(error, 'Proposition impossible');
+
+  const visitIds = (data ?? []) as string[];
+  const firstId = visitIds[0];
+  if (!firstId) throw new Error('Proposition impossible : aucun créneau enregistré');
+  return firstId;
 }
 
 export async function listVisits(conversationId: string): Promise<Visit[]> {

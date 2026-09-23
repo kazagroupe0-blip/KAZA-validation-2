@@ -68,6 +68,8 @@ export default function ProfilePage() {
   }, [user]);
 
   const missing = useMemo(() => missingLandlordFields(user), [user]);
+  // Le formulaire local reflète immédiatement les données validées par updateProfile.
+  // Le backend reste la source de vérité : savedComplete est calculé depuis la ligne relue.
   const formComplete =
     user?.role === 'bailleur'
     && fullName.trim().length >= 2
@@ -102,8 +104,14 @@ export default function ProfilePage() {
             }
           : {}),
       });
+
+      // La DB est la source de vérité de la complétude. updateProfile retourne
+      // la ligne effectivement persistée après ses triggers métier.
       setUserProfile(updatedProfile);
-      setSavedComplete(missingLandlordFields(updatedProfile).length === 0);
+      setSavedComplete(
+        updatedProfile.onboarding_completed === true ||
+        missingLandlordFields(updatedProfile).length === 0,
+      );
       // L'état du contexte vient maintenant directement de la ligne sauvegardée.
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
