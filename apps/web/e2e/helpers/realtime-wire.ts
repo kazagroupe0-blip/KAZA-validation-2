@@ -295,16 +295,22 @@ export interface RealtimeProbe {
   close: () => Promise<void>;
 }
 
-export function openRealtimeProbe(env: RealtimeEnv, session: UserSession, spec: ProbeSpec): RealtimeProbe {
+export async function openRealtimeProbe(
+  env: RealtimeEnv,
+  session: UserSession,
+  spec: ProbeSpec,
+): Promise<RealtimeProbe> {
   const client =
     spec.mode === 'dedicated'
       ? createClient(env.url, env.anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
       : session.client;
+
   if (spec.mode === 'dedicated') {
-    // note : volontairement non attendu, exactement comme ChatWindow ; si cela
-    // suffit à envoyer le join avec la clé anon, la sonde le révélera.
-    void client.realtime.setAuth(session.accessToken);
+    // Diagnostic invariant: exactly like the production fix, setAuth must resolve
+    // before the channel join is created.
+    await client.realtime.setAuth(session.accessToken);
   }
+
   const topic = `c1-${spec.label}-${Date.now()}`;
   const result: ProbeResult = { spec, topic, statuses: [], systemEvents: [], changes: [] };
   const binding = {
@@ -329,6 +335,7 @@ export function openRealtimeProbe(env: RealtimeEnv, session: UserSession, spec: 
         detail: err instanceof Error ? err.message : err ? String(err) : null,
       });
     });
+
   return {
     result,
     close: async () => {
@@ -337,6 +344,22 @@ export function openRealtimeProbe(env: RealtimeEnv, session: UserSession, spec: 
     },
   };
 }
+
+export async function openC1Probes(
+  env: RealtimeEnv,
+  session: UserSession,
+  table: string,
+  event: 'INSERT' | 'UPDATE',
+  conversationId: string,
+): Promise<RealtimeProbe[]> {
+  const filter = `conversation_id=eq.${conversationId}`;
+  return [
+    await openRealtimeProbe(env, session, { label: 'filtered-dedicated', mode: 'dedicated', table, event, filter }),
+    await openRealtimeProbe(env, session, { label: 'unfiltered-dedicated', mode: 'dedicated', table, event, filter: null }),
+    await openRealtimeProbe(env, session, { label: 'filtered-session', mode: 'session', table, event, filter }),
+  ];
+}
+
 
 export function probeSubscribed(result: ProbeResult): boolean {
   return result.statuses.some((entry) => entry.status === 'SUBSCRIBED');
