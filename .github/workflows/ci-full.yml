@@ -2,9 +2,6 @@ name: CI Full
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - validation/run-full-20260923
 
 concurrency:
   group: ci-full-${{ github.ref }}
@@ -75,10 +72,6 @@ jobs:
           username = os.environ.get("DOCKERHUB_USERNAME", "")
           token = os.environ.get("DOCKERHUB_TOKEN", "")
 
-          if not username or not token:
-              print("DOCKER_HUB_AUTH_RESULT=SKIPPED_NO_SECRETS")
-              raise SystemExit(0)
-
           payload = json.dumps({
               "identifier": username,
               "secret": token,
@@ -116,11 +109,6 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "DOCKER_HUB_LOGIN=SKIPPED_NO_SECRETS"
-            exit 0
-          fi
-
           printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io \
             --username "$DOCKERHUB_USERNAME" \
             --password-stdin
@@ -280,11 +268,6 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "DOCKER_HUB_LOGIN=SKIPPED_NO_SECRETS"
-            exit 0
-          fi
-
           printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io \
             --username "$DOCKERHUB_USERNAME" \
             --password-stdin
@@ -426,7 +409,6 @@ jobs:
           retention-days: 7
 
       - name: Realtime C1 diagnostic (fresh database)
-        if: ${{ always() }}
         id: c1
         continue-on-error: true
         env:
@@ -439,23 +421,7 @@ jobs:
           set -e
           mkdir -p "$C1_DIR"
 
-          reset_ok=0
-          for i in 1 2 3; do
-            if supabase db reset; then
-              reset_ok=1
-              break
-            fi
-            echo "C1: supabase db reset échoué (tentative $i/3) — nouvel essai dans 20s..."
-            sleep 20
-          done
-
-          if [ "$reset_ok" -ne 1 ]; then
-            echo "C1: échec définitif du reset Supabase" | tee "$C1_DIR/c1-reset-failure.txt"
-            docker ps -a > "$C1_DIR/docker-ps.txt" 2>&1 || true
-            docker logs --tail 250 supabase_db_kaza > "$C1_DIR/supabase-db.log" 2>&1 || true
-            exit 1
-          fi
-
+          supabase db reset
           docker restart supabase_realtime_kaza
 
           realtime_status=""
