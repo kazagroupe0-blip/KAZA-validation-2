@@ -16,7 +16,7 @@ import {
 } from '@/lib/supabase-api';
 import { VisitProposalModal } from './VisitProposalModal';
 import { useAuth } from '@/lib/auth-context';
-import { supabase, supabaseRealtime } from '@/lib/supabase-client';
+import { supabase } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload, REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
 import type { ConversationWithRelations, Message, Visit } from '@/lib/types';
 import { timeAgo, formatXof } from '@/lib/format';
@@ -76,7 +76,7 @@ export function ChatWindow() {
 
   // Temps réel Supabase — le client dédié doit terminer setAuth() avant le join.
   useEffect(() => {
-    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
     let connecting = false;
@@ -94,10 +94,10 @@ export function ChatWindow() {
       connecting = true;
 
       try {
-        await supabaseRealtime.realtime.setAuth(accessToken);
+        await supabase.realtime.setAuth(accessToken);
         if (cancelled) return;
 
-        channel = supabaseRealtime
+        channel = supabase
           .channel(`messages:${id}`)
           .on(
             'postgres_changes',
@@ -164,7 +164,7 @@ export function ChatWindow() {
     return () => {
       cancelled = true;
       authSubscription?.unsubscribe();
-      if (channel) void supabaseRealtime.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [id, user?.id]);
 
