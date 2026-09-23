@@ -97,7 +97,7 @@ export function ChatWindow() {
         await supabase.realtime.setAuth(accessToken);
         if (cancelled) return;
 
-        channel = supabaseRealtime
+        channel = supabase
           .channel(`messages:${id}`)
           .on(
             'postgres_changes',
