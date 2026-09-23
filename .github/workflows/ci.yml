@@ -279,7 +279,9 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # note : 30 → 50 min — la phase diagnostic C1 refait un db reset et un
+    # build Next (webServer CI) après la suite standard.
+    timeout-minutes: 50
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
@@ -445,8 +447,190 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: apps/web/playwright-report/
+          # note : sans reporter html configuré, playwright-report/ n'existe pas ;
+          # test-results/ porte les contextes d'erreur de la suite standard.
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: warn
           retention-days: 7
+
+      # ------------------------------------------------------------------
+      # Phase DIAGNOSTIC C1 — séparée de la suite standard ci-dessus.
+      # S'exécute même si la suite standard a échoué (le job reste alors en
+      # échec). Base fraîche : db reset + redémarrage Realtime. Seuls les tests
+      # « Diagnostic Realtime C1 » tournent, avec E2E_REALTIME_DIAG=1.
+      # Ce step échoue si : un test C1 échoue, est skipped, n'a pas produit son
+      # rapport JSON, ou si un verdict est autre que no-reproduction
+      # (inconclusive compris).
+      # ------------------------------------------------------------------
+      - name: Realtime C1 diagnostic (fresh database)
+        id: c1
+        if: ${{ !cancelled() && steps.supabase.outcome == 'success' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321/
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: http://localhost:3000/
+          NEXT_PUBLIC_HCAPTCHA_SITEKEY: ""
+          C1_DIR: ${{ github.workspace }}/c1-diagnostic
+        run: |
+          set -e
+          echo "=== C1 DIAGNOSTIC START ==="
+          trap 'echo "=== C1 DIAGNOSTIC END ==="' EXIT
+          mkdir -p "$C1_DIR"
+
+          echo "::group::C1 — base fraîche (supabase db reset)"
+          supabase db reset
+          echo "::endgroup::"
+
+          echo "::group::C1 — redémarrage supabase_realtime_kaza"
+          docker restart supabase_realtime_kaza
+          realtime_status=""
+          for i in $(seq 1 30); do
+            realtime_status=$(docker inspect -f '{{.State.Status}}' supabase_realtime_kaza 2>/dev/null || true)
+            if [ "$realtime_status" = "running" ]; then
+              echo "C1: Realtime running après reset (tentative $i)."
+              break
+            fi
+            sleep 1
+          done
+          if [ "$realtime_status" != "running" ]; then
+            echo "::error::C1: le container Realtime n'est pas revenu à l'état running."
+            docker logs --tail 200 supabase_realtime_kaza || true
+            exit 1
+          fi
+          docker inspect -f '{{json .State}}' supabase_realtime_kaza > "$C1_DIR/realtime-state-before.json" || true
+          echo "::endgroup::"
+
+          echo "::group::C1 — privilèges service_role CI (parité avec la phase standard)"
+          cat >/tmp/kaza-c1-service-role-grants.sql <<'SQL'
+          -- CI local only : mêmes privilèges que la phase standard après db reset.
+          grant usage on schema public to service_role;
+          grant select, insert, update, delete on all tables in schema public to service_role;
+          grant usage, select on all sequences in schema public to service_role;
+          notify pgrst, 'reload schema';
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/kaza-c1-service-role-grants.sql
+          echo "::endgroup::"
+
+          cd apps/web
+          set +e
+          E2E_REALTIME_DIAG=1 \
+          PLAYWRIGHT_JSON_OUTPUT_FILE="$C1_DIR/playwright-c1.json" \
+            npx playwright test --project=chromium --grep "Diagnostic Realtime C1" \
+              --reporter=list,json \
+              --trace=retain-on-failure \
+              --output="$C1_DIR/test-results" 2>&1 | tee "$C1_DIR/playwright-c1.log"
+          C1_STATUS=${PIPESTATUS[0]}
+          set -e
+          cd ../..
+
+          docker logs --tail 500 supabase_realtime_kaza > "$C1_DIR/realtime.log" 2>&1 || true
+          grep -F '[KAZA:C1]' "$C1_DIR/playwright-c1.log" > "$C1_DIR/kaza-c1-stdout.log" || true
+
+          echo "::group::C1 — extraction des rapports"
+          set +e
+          node - <<'JS'
+          const fs = require('fs');
+          const path = require('path');
+          const dir = process.env.C1_DIR;
+          const lines = [];
+          const out = (line) => { console.log(line); lines.push(line.replace(/^::\w+( [^:]*)?::/, '')); };
+          let failed = false;
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(path.join(dir, 'playwright-c1.json'), 'utf8'));
+          } catch (error) {
+            out(`::error::C1: rapport Playwright JSON absent ou illisible (${error.message})`);
+            fs.writeFileSync(path.join(dir, 'c1-summary.txt'), lines.join('\n') + '\n');
+            process.exit(1);
+          }
+          const tests = [];
+          const walk = (suite, titles) => {
+            (suite.suites || []).forEach((child) => walk(child, [...titles, child.title]));
+            (suite.specs || []).forEach((spec) =>
+              (spec.tests || []).forEach((test) =>
+                tests.push({ title: [...titles, spec.title].filter(Boolean).join(' › '), test }),
+              ),
+            );
+          };
+          walk(report, []);
+          const c1 = tests.filter(({ title }) => title.includes('Diagnostic Realtime C1'));
+          out(`C1: ${c1.length} test(s) diagnostic trouvé(s) (attendu : 2)`);
+          if (c1.length !== 2) {
+            out('::error::C1: nombre de tests diagnostic inattendu');
+            failed = true;
+          }
+          const expected = ['c1-chat-diagnostic.json', 'c1-visits-diagnostic.json'];
+          const written = new Set();
+          c1.forEach(({ title, test }) => {
+            const results = test.results || [];
+            const statuses = results.map((result) => result.status).join(',') || 'aucun résultat';
+            if (test.status === 'skipped') {
+              out(`::error::C1 SKIPPED — ${title} : E2E_REALTIME_DIAG non pris en compte`);
+              failed = true;
+            }
+            const attachments = results.flatMap((result) => result.attachments || [])
+              .filter((attachment) => /^c1-.*\.json$/.test(attachment.name) && attachment.body);
+            if (attachments.length === 0) {
+              out(`::error::C1 RAPPORT ABSENT — ${title} (statut=${test.status}, résultats=${statuses})`);
+              failed = true;
+              return;
+            }
+            attachments.forEach((attachment) => {
+              const body = Buffer.from(attachment.body, 'base64').toString('utf8');
+              fs.writeFileSync(path.join(dir, attachment.name), body);
+              written.add(attachment.name);
+              let verdict = 'illisible';
+              let meaning = '';
+              try {
+                const parsed = JSON.parse(body);
+                verdict = parsed.verdict;
+                meaning = parsed.meaning;
+                out(`C1 ${attachment.name} observation=${JSON.stringify(parsed.observation)}`);
+              } catch {
+                failed = true;
+              }
+              const line = `C1 ${attachment.name} — ${title} : statut=${test.status} verdict=${verdict} — ${meaning}`;
+              if (verdict === 'no-reproduction') {
+                out(line);
+              } else if (verdict === 'inconclusive') {
+                out(`::error title=C1 INCONCLUSIVE::${line}`);
+                failed = true;
+              } else {
+                out(`::error title=C1 VERDICT ${verdict}::${line}`);
+                failed = true;
+              }
+            });
+          });
+          expected.filter((name) => !written.has(name)).forEach((name) => {
+            out(`::error::C1 fichier attendu manquant : ${name}`);
+            failed = true;
+          });
+          fs.writeFileSync(path.join(dir, 'c1-summary.txt'), lines.join('\n') + '\n');
+          process.exit(failed ? 1 : 0);
+          JS
+          SUMMARY_STATUS=$?
+          set -e
+          echo "::endgroup::"
+
+          echo "C1: statut Playwright=$C1_STATUS, statut rapports=$SUMMARY_STATUS"
+          if [ -f "$C1_DIR/c1-summary.txt" ]; then
+            { echo '### Diagnostic Realtime C1'; echo '```'; cat "$C1_DIR/c1-summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$C1_STATUS" -ne 0 ] || [ "$SUMMARY_STATUS" -ne 0 ]; then
+            echo "::error::C1: diagnostic en échec ou non concluant — voir l'artefact c1-diagnostic."
+            exit 1
+          fi
+
+      - name: Upload C1 diagnostic reports
+        if: ${{ !cancelled() && steps.c1.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: c1-diagnostic
+          path: c1-diagnostic/
+          if-no-files-found: error
+          retention-days: 14
 
   edge-functions:
     runs-on: ubuntu-latest
