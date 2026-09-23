@@ -151,6 +151,7 @@ export function NotificationBell() {
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
       if (channel) void supabaseRealtime.removeChannel(channel);
     };
+  }, [user?.id]);
 
   // Fermeture au clic extérieur + Échap.
   useEffect(() => {
