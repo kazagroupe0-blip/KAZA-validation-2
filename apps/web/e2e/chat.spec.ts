@@ -82,12 +82,16 @@ test.describe('Messagerie de bout en bout', () => {
       await expect(conversation).toBeVisible({ timeout: 15_000 });
       await conversation.click();
 
-      await expect(landlord.getByText(tenantMessage)).toBeVisible({ timeout: 15_000 });
+      await expect(
+        landlord.getByTestId('chat-thread').getByText(tenantMessage, { exact: true }),
+      ).toBeVisible({ timeout: 15_000 });
 
       // Le bailleur répond sans recharger la page du locataire.
       await landlord.getByLabel('Message').fill(landlordMessage);
       await landlord.getByRole('button', { name: 'Envoyer' }).click();
-      await expect(landlord.getByText(landlordMessage, { exact: true })).toBeVisible();
+      await expect(
+        landlord.getByTestId('chat-thread').getByText(landlordMessage, { exact: true }),
+      ).toBeVisible();
 
       // Régression C1 : la réponse doit arriver dans le fil de la conversation
       // (binding postgres_changes du ChatWindow), et pas seulement dans l'aperçu
