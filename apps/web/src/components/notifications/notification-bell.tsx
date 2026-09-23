@@ -91,7 +91,7 @@ export function NotificationBell() {
     window.addEventListener('kaza:notifications-refresh', onNotificationsRefresh);
 
     // Notifications temps réel — même règle : setAuth doit être terminé avant le join.
-    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
     let connecting = false;
