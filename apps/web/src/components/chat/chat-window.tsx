@@ -76,7 +76,7 @@ export function ChatWindow() {
 
   // Temps réel Supabase — le client dédié doit terminer setAuth() avant le join.
   useEffect(() => {
-    let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
     let connecting = false;
