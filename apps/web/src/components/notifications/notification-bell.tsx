@@ -43,9 +43,17 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const liveNotificationsRef = useRef(new Map<string, AppNotification>());
+  const liveNotificationsUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
+
+    if (liveNotificationsUserIdRef.current !== user.id) {
+      liveNotificationsUserIdRef.current = user.id;
+      liveNotificationsRef.current.clear();
+      setItems([]);
+      setUnread(0);
+    }
     let mounted = true;
 
     const load = async () => {
