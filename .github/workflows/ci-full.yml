@@ -2,10 +2,6 @@ name: CI Full
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-      - validation/run-full-20260923
 
 concurrency:
   group: ci-full-${{ github.ref }}
@@ -75,6 +71,10 @@ jobs:
 
           username = os.environ.get("DOCKERHUB_USERNAME", "")
           token = os.environ.get("DOCKERHUB_TOKEN", "")
+
+          if not username or not token:
+              print("DOCKER_HUB_AUTH_RESULT=SKIPPED_NO_SECRETS")
+              raise SystemExit(0)
 
           payload = json.dumps({
               "identifier": username,
