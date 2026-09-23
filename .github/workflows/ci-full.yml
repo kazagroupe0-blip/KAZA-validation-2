@@ -1,4 +1,5 @@
 name: CI Full
+# note: full validation is intentionally triggered on the stable validation-base PR.
 
 on:
   workflow_dispatch:
