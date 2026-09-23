@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - validation/run-full-20260923
+      - validation/final-20260923
 
 concurrency:
   group: ci-full-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
