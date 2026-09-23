@@ -149,7 +149,7 @@ export function NotificationBell() {
       authSubscription?.unsubscribe();
       mounted = false;
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
-      if (channel) void supabaseRealtime.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [user?.id]);
 
