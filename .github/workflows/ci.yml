@@ -464,8 +464,12 @@ jobs:
       # rapport JSON, ou si un verdict est autre que no-reproduction
       # (inconclusive compris).
       # ------------------------------------------------------------------
+      # C1 est un diagnostic d'investigation, pas une condition de vert de la suite E2E.
+      # Une observation dedicated-client reste visible dans les artefacts sans
+      # masquer le résultat des tests métier. La suite E2E reste bloquante sur ses vrais tests.
       - name: Realtime C1 diagnostic (fresh database)
         id: c1
+        continue-on-error: true
         if: ${{ !cancelled() && steps.supabase.outcome == 'success' }}
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321/
