@@ -66,7 +66,7 @@ test.describe('Messagerie de bout en bout', () => {
       // La conversation est ensuite utilisée comme un vrai échange.
       await tenant.getByLabel('Message').fill(tenantMessage);
       await tenant.getByRole('button', { name: 'Envoyer' }).click();
-      await expect(tenant.getByText(tenantMessage)).toBeVisible();
+      await expect(\n        tenant.getByTestId('chat-thread').getByText(tenantMessage, { exact: true }),\n      ).toBeVisible();
 
       // Le bailleur voit la même conversation via sa propre session.
       await login(landlord, LANDLORD_EMAIL, LANDLORD_PW);
