@@ -99,3 +99,7 @@ accepte aussi un créneau passé et un bien non libre. Mesuré en SQL sous RLS
 ### Gate final — 98%+
 Toutes les promesses majeures retenues pour le produit doivent disposer
 d'une preuve traçable dans cette matrice, sans anomalie critique connue.
+
+
+## Phase A certification trigger (2026-09-24)
+Validation-only marker; no product code change.
