@@ -153,7 +153,7 @@ test.describe('Diagnostic Realtime C1 — messagerie', () => {
 
       const isTarget = (record: Record<string, unknown>) =>
         record.body === landlordMessage && record.conversation_id === conversationId;
-      const thread = tenant.getByTestId('chat-thread').getByText(landlordMessage);
+      const thread = tenant.getByTestId('chat-thread').getByText(landlordMessage, { exact: true });
       const snapshot = async () =>
         buildC1Report({
           scenario: 'chat: INSERT messages (bailleur → locataire)',
