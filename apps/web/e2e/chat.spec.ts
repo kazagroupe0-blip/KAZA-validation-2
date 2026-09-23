@@ -136,7 +136,7 @@ test.describe('Diagnostic Realtime C1 — messagerie', () => {
       const conversationId = new URL(tenant.url()).pathname.split('/').pop() ?? '';
       expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
-      probes.push(...openC1Probes(env, tenantSession, 'messages', 'INSERT', conversationId));
+      probes.push(...await openC1Probes(env, tenantSession, 'messages', 'INSERT', conversationId));
       // note : on n'échoue pas ici — une sonde non prête rend le verdict « inconclusive ».
       await expect
         .poll(() => probesReady(probes), { timeout: 15_000 })
