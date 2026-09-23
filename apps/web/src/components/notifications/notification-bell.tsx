@@ -10,7 +10,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/supabase-api';
-import { supabase, supabaseRealtime } from '@/lib/supabase-client';
+import { supabase } from '@/lib/supabase-client';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { timeAgo } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
