@@ -164,7 +164,7 @@ export function ChatWindow() {
     return () => {
       cancelled = true;
       authSubscription?.unsubscribe();
-      if (channel) void supabaseRealtime.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [id, user?.id]);
 
