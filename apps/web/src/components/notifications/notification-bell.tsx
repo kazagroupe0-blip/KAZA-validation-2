@@ -104,7 +104,7 @@ export function NotificationBell() {
         await supabase.realtime.setAuth(accessToken);
         if (cancelled) return;
 
-        channel = supabaseRealtime
+        channel = supabase
           .channel(`notifications:${user.id}`)
           .on(
             'postgres_changes',
