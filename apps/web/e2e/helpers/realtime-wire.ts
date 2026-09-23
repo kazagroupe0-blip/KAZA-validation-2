@@ -431,22 +431,6 @@ export function classifyC1(observation: C1Observation): C1Verdict {
   return 'server-publication';
 }
 
-/** Les trois sondes de comparaison, sur la table/l'événement que ChatWindow écoute. */
-export function openC1Probes(
-  env: RealtimeEnv,
-  session: UserSession,
-  table: string,
-  event: 'INSERT' | 'UPDATE',
-  conversationId: string,
-): RealtimeProbe[] {
-  const filter = `conversation_id=eq.${conversationId}`;
-  return [
-    openRealtimeProbe(env, session, { label: 'filtered-dedicated', mode: 'dedicated', table, event, filter }),
-    openRealtimeProbe(env, session, { label: 'unfiltered-dedicated', mode: 'dedicated', table, event, filter: null }),
-    openRealtimeProbe(env, session, { label: 'filtered-session', mode: 'session', table, event, filter }),
-  ];
-}
-
 export function probesReady(probes: RealtimeProbe[]): boolean {
   return probes.every(
     ({ result }) => probeSubscribed(result) && probeBindingVerdict(result) !== 'error',
