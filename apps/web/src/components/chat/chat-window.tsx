@@ -94,7 +94,7 @@ export function ChatWindow() {
       connecting = true;
 
       try {
-        await supabaseRealtime.realtime.setAuth(accessToken);
+        await supabase.realtime.setAuth(accessToken);
         if (cancelled) return;
 
         channel = supabaseRealtime
