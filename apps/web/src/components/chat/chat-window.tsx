@@ -74,86 +74,90 @@ export function ChatWindow() {
     void load();
   }, [load]);
 
-  // Temps réel Supabase — client dédié, authentifié avec la session du
-  // client SSR. Le listener auth couvre la course de bootstrap de session.
+  // Temps réel Supabase — le client dédié doit terminer setAuth() avant le join.
   useEffect(() => {
     let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
-    // note : SUBSCRIBED ne prouve que le join du channel. L'état affiché combine
-    // aussi le verdict `system` de la souscription PostgreSQL (realtime-health).
+    let connecting = false;
     let health: RealtimeHealth = INITIAL_REALTIME_HEALTH;
+
     const publish = (next: RealtimeHealth) => {
       health = next;
-      // note : un channel déjà nettoyé (changement de conversation) ne doit plus
-      // écrire l'état du channel courant (ex. son CLOSED tardif).
       if (cancelled) return;
       setIsConnected(isRealtimeLive(next));
       setRealtimeError(realtimeHealthError(next));
     };
 
-    const connect = (accessToken: string | null) => {
-      if (!accessToken || cancelled || channel) return;
+    const connect = async (accessToken: string | null) => {
+      if (!accessToken || cancelled || channel || connecting) return;
+      connecting = true;
 
-      supabaseRealtime.realtime.setAuth(accessToken);
-      channel = supabaseRealtime
-        .channel(`messages:${id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'visits',
-            filter: `conversation_id=eq.${id}`,
-          },
-          (payload) => {
-            const visit = payload.new as { status?: string };
-            if (visit.status === 'confirmed' || visit.status === 'cancelled') {
-              void load();
+      try {
+        await supabaseRealtime.realtime.setAuth(accessToken);
+        if (cancelled) return;
+
+        channel = supabaseRealtime
+          .channel(`messages:${id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'visits',
+              filter: `conversation_id=eq.${id}`,
+            },
+            (payload) => {
+              const visit = payload.new as { status?: string };
+              if (visit.status === 'confirmed' || visit.status === 'cancelled') {
+                void load();
+              }
+            },
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'messages',
+              filter: `conversation_id=eq.${id}`,
+            },
+            (payload: RealtimePostgresInsertPayload<Message>) => {
+              const m = payload.new as Message;
+              setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+              if (m.sender_id !== user?.id) {
+                void markConversationRead(id).catch(() => undefined);
+              }
+            },
+          )
+          .on('system', {}, (payload: unknown) => {
+            const next = applySystemEvent(health, payload);
+            if (next.bindingError !== null && next.bindingError !== health.bindingError) {
+              console.error('[kaza:realtime] postgres_changes binding failed', next.bindingError);
             }
-          },
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `conversation_id=eq.${id}`,
-          },
-          (payload: RealtimePostgresInsertPayload<Message>) => {
-            const m = payload.new as Message;
-            setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
-            if (m.sender_id !== user?.id) {
-              void markConversationRead(id).catch(() => undefined);
+            publish(next);
+          })
+          .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
+            const detail = err instanceof Error ? err.message : String(err ?? status);
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              console.error('[kaza:realtime] subscription failed', status, detail);
             }
-          },
-        )
-        .on('system', {}, (payload: unknown) => {
-          const next = applySystemEvent(health, payload);
-          if (next.bindingError !== null && next.bindingError !== health.bindingError) {
-            console.error('[kaza:realtime] postgres_changes binding failed', next.bindingError);
-          }
-          publish(next);
-        })
-        .subscribe((status: REALTIME_SUBSCRIBE_STATES, err) => {
-          const detail = err instanceof Error ? err.message : String(err ?? status);
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.error('[kaza:realtime] subscription failed', status, detail);
-          }
-          publish(applySubscribeStatus(health, status, detail));
-        });
+            publish(applySubscribeStatus(health, status, detail));
+          });
+      } finally {
+        connecting = false;
+      }
     };
 
     setIsConnected(false);
     setRealtimeError(null);
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!cancelled) connect(session?.access_token ?? null);
+      if (!cancelled) void connect(session?.access_token ?? null);
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!cancelled && session) connect(session.access_token);
+      if (!cancelled && session) void connect(session.access_token);
     });
     authSubscription = data.subscription;
 

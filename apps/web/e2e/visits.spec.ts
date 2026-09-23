@@ -180,7 +180,7 @@ test.describe('Diagnostic Realtime C1 — visites', () => {
     const tenant = await tenantContext.newPage();
     const landlord = await landlordContext.newPage();
     const tenantWire = captureRealtimeWire(tenant);
-    const probes: ReturnType<typeof openC1Probes> = [];
+    const probes: Awaited<ReturnType<typeof openC1Probes>> = [];
 
     const start = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     start.setMinutes(0, 0, 0);
@@ -198,7 +198,7 @@ test.describe('Diagnostic Realtime C1 — visites', () => {
       const conversationId = new URL(tenant.url()).pathname.split('/').pop() ?? '';
       expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
-      probes.push(...openC1Probes(env, tenantSession, 'visits', 'UPDATE', conversationId));
+      probes.push(...await openC1Probes(env, tenantSession, 'visits', 'UPDATE', conversationId));
       // note : on n'échoue pas ici — une sonde non prête rend le verdict « inconclusive ».
       await expect
         .poll(() => probesReady(probes), { timeout: 15_000 })

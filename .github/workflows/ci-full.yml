@@ -1,0 +1,572 @@
+name: CI Full
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-full-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend-validation:
+    name: Edge functions, dependency audit & DB integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.3.3
+
+      - name: Install Supabase CLI (pinned)
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/download/v2.114.0/supabase_linux_amd64.tar.gz -o /tmp/supabase.tar.gz
+          tar xzf /tmp/supabase.tar.gz -C /tmp
+          sudo mv /tmp/supabase /usr/local/bin/supabase
+          supabase --version
+
+      - name: Lint Edge Functions
+        run: |
+          for f in supabase/functions/*/index.ts; do
+            echo "Checking $f..."
+            deno lint "$f"
+          done
+
+      - name: Typecheck Edge Functions
+        run: |
+          for f in supabase/functions/*/index.ts; do
+            echo "Typechecking $f..."
+            deno check --config supabase/functions/deno.json "$f"
+          done
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high --workspace apps/web
+
+      - name: Diagnose Docker Hub credentials
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          username = os.environ.get("DOCKERHUB_USERNAME", "")
+          token = os.environ.get("DOCKERHUB_TOKEN", "")
+
+          payload = json.dumps({
+              "identifier": username,
+              "secret": token,
+          }).encode("utf-8")
+
+          request = urllib.request.Request(
+              "https://hub.docker.com/v2/auth/token",
+              data=payload,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+
+          status = 0
+          body = {}
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  status = response.status
+                  body = json.loads(response.read().decode("utf-8"))
+          except urllib.error.HTTPError as error:
+              status = error.code
+          except Exception:
+              status = 0
+
+          print(f"DOCKER_HUB_AUTH_HTTP_STATUS={status}")
+
+          if status == 200 and isinstance(body, dict) and body.get("access_token"):
+              print("DOCKER_HUB_AUTH_RESULT=SUCCESS")
+          else:
+              print("DOCKER_HUB_AUTH_RESULT=FAILURE")
+              raise SystemExit(1)
+          PYEOF
+
+      - name: Login to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io \
+            --username "$DOCKERHUB_USERNAME" \
+            --password-stdin
+
+      - name: Start Supabase local
+        id: supabase
+        run: |
+          for i in 1 2 3 4; do
+            if supabase start; then break; fi
+            echo "supabase start (tentative $i) échouée — nouvel essai dans 30s..."
+            sleep 30
+          done
+
+          env_vars=$(supabase status -o env)
+          anon_key=$(printf '%s\n' "$env_vars" | grep -iE '^anon_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+          service_role_key=$(printf '%s\n' "$env_vars" | grep -iE '^service_role_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+
+          if [ -z "$anon_key" ] || [ -z "$service_role_key" ]; then
+            echo "::error::Impossible de récupérer les clés Supabase via 'supabase status -o env'."
+            printf '%s\n' "$env_vars" | head -40
+            exit 1
+          fi
+
+          echo "ANON_KEY=$anon_key" >> "$GITHUB_OUTPUT"
+          echo "SERVICE_ROLE_KEY=$service_role_key" >> "$GITHUB_OUTPUT"
+
+      - name: Reset database
+        run: supabase db reset
+
+      - name: Restore service_role privileges (CI-only)
+        run: |
+          cat >/tmp/kaza-ci-service-role-grants.sql <<'SQL'
+          grant usage on schema public to service_role;
+          grant select, insert, update, delete on all tables in schema public to service_role;
+          grant usage, select on all sequences in schema public to service_role;
+          notify pgrst, 'reload schema';
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/kaza-ci-service-role-grants.sql
+
+      - name: DB types drift check
+        run: npm run db:types:check
+
+      - name: Install CI-only test helpers
+        run: |
+          cat >/tmp/kaza-ci-test-helpers.sql <<'SQL'
+          create or replace function public.get_function_source(p_function_name text)
+          returns text
+          language plpgsql
+          security definer
+          set search_path = public
+          as $$
+          declare
+            v_source text;
+          begin
+            if auth.role() <> 'service_role' then
+              raise exception 'Test-only helper';
+            end if;
+
+            select pg_get_functiondef(oid) into v_source
+              from pg_proc
+             where proname = p_function_name
+               and pronamespace = 'public'::regnamespace
+             limit 1;
+
+            if v_source is null then
+              raise exception 'Function % not found', p_function_name;
+            end if;
+
+            return v_source;
+          end;
+          $$;
+
+          revoke all on function public.get_function_source(text) from public, anon, authenticated;
+          grant execute on function public.get_function_source(text) to service_role;
+
+          create or replace function public.reset_test_database()
+          returns void
+          language plpgsql
+          security definer
+          set search_path = public
+          as $$
+          begin
+            if auth.role() <> 'service_role' then
+              raise exception 'Test-only helper';
+            end if;
+
+            delete from public.favorites where true;
+            delete from public.messages where true;
+            delete from public.receipts where true;
+            delete from public.payments where true;
+            delete from public.visits where true;
+            delete from public.conversations where true;
+            delete from public.leases where true;
+            delete from public.notifications where true;
+            delete from public.landlord_payouts where true;
+            delete from public.admin_audit_logs where true;
+            delete from public.residences where true;
+          end;
+          $$;
+
+          revoke all on function public.reset_test_database() from public, anon, authenticated;
+          grant execute on function public.reset_test_database() to service_role;
+
+          grant usage on schema public to service_role;
+          grant select, insert, update, delete on all tables in schema public to service_role;
+          grant usage, select on all sequences in schema public to service_role;
+
+          do $$
+          begin
+            if not has_schema_privilege('service_role', 'public', 'USAGE')
+               or not has_table_privilege('service_role', 'public.profiles', 'UPDATE') then
+              raise exception 'CI precondition failed: service_role privileges missing';
+            end if;
+          end;
+          $$;
+
+          notify pgrst, 'reload schema';
+          SQL
+
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/kaza-ci-test-helpers.sql
+
+      - name: Run DB integration tests
+        run: npx vitest run -c vitest.config.integration.ts tests/integration
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321/
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.SERVICE_ROLE_KEY }}
+
+  e2e:
+    name: Playwright E2E + Realtime C1 diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    needs: backend-validation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Supabase CLI (pinned)
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/download/v2.114.0/supabase_linux_amd64.tar.gz -o /tmp/supabase.tar.gz
+          tar xzf /tmp/supabase.tar.gz -C /tmp
+          sudo mv /tmp/supabase /usr/local/bin/supabase
+          supabase --version
+
+      - name: Login to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io \
+            --username "$DOCKERHUB_USERNAME" \
+            --password-stdin
+
+      - name: Start Supabase local
+        id: supabase
+        run: |
+          for i in 1 2 3 4; do
+            if supabase start; then break; fi
+            echo "supabase start (tentative $i) échouée — nouvel essai dans 30s..."
+            sleep 30
+          done
+
+          env_vars=$(supabase status -o env)
+          anon_key=$(printf '%s\n' "$env_vars" | grep -iE '^anon_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+
+          if [ -z "$anon_key" ]; then
+            echo "::error::Impossible de récupérer l'ANON_KEY."
+            printf '%s\n' "$env_vars" | head -40
+            exit 1
+          fi
+
+          echo "ANON_KEY=$anon_key" >> "$GITHUB_OUTPUT"
+
+      - name: Reset database
+        run: supabase db reset
+
+      - name: Restart Realtime after database migrations
+        run: |
+          docker restart supabase_realtime_kaza
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Status}}' supabase_realtime_kaza 2>/dev/null || true)
+            if [ "$status" = "running" ]; then
+              echo "Realtime is running after migration reset."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Realtime container did not return to running state."
+          docker logs --tail 200 supabase_realtime_kaza || true
+          exit 1
+
+      - name: Restore service_role privileges (CI-only)
+        run: |
+          cat >/tmp/kaza-e2e-service-role-grants.sql <<'SQL'
+          grant usage on schema public to service_role;
+          grant select, insert, update, delete on all tables in schema public to service_role;
+          grant usage, select on all sequences in schema public to service_role;
+          notify pgrst, 'reload schema';
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/kaza-e2e-service-role-grants.sql
+
+      - name: Run Playwright E2E with receipts-sign
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321/
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: http://localhost:3000/
+          NEXT_PUBLIC_HCAPTCHA_SITEKEY: ""
+        run: |
+          set -e
+
+          env_vars=$(supabase status -o env)
+          supabase_url=$(printf '%s\n' "$env_vars" | grep -iE '^API_URL=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+          service_role_key=$(printf '%s\n' "$env_vars" | grep -iE '^service_role_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+
+          if [ -z "$supabase_url" ] || [ -z "$service_role_key" ]; then
+            echo "::error::Impossible de récupérer les paramètres Supabase locaux pour receipts-sign."
+            exit 1
+          fi
+
+          export SUPABASE_URL="$supabase_url"
+          export SUPABASE_SERVICE_ROLE_KEY="$service_role_key"
+
+          cat >/tmp/kaza-edge.env <<EOF
+          SUPABASE_URL=$SUPABASE_URL
+          SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+          EOF
+
+          supabase functions serve --env-file /tmp/kaza-edge.env > /tmp/kaza-receipts-sign.log 2>&1 &
+          FUNCTION_PID=$!
+          trap 'kill "$FUNCTION_PID" 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -X POST http://127.0.0.1:54321/functions/v1/receipts-sign \
+              -H 'Content-Type: application/json' \
+              -d '{}' || echo '000')
+
+            if [ "$code" != '000' ] && [ "$code" != '404' ]; then
+              echo "receipts-sign disponible (HTTP $code)"
+              break
+            fi
+
+            if [ "$i" = '30' ]; then
+              echo "::error::receipts-sign indisponible après 60s"
+              tail -80 /tmp/kaza-receipts-sign.log || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          cd apps/web
+          npx playwright install chromium
+          cd ../..
+
+          set +e
+          NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS=1 npm run test:e2e
+          TEST_STATUS=$?
+          set -e
+
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            echo "::group::receipts-sign diagnostics"
+            if kill -0 "$FUNCTION_PID" 2>/dev/null; then
+              echo "receipts-sign process toujours vivant au moment de l'échec."
+            else
+              echo "::error::receipts-sign process terminé avant l'échec E2E."
+            fi
+            tail -200 /tmp/kaza-receipts-sign.log || true
+
+            echo "::group::realtime diagnostics"
+            docker inspect -f '{{json .State}}' supabase_realtime_kaza 2>/dev/null || true
+            docker logs --tail 200 supabase_realtime_kaza 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::endgroup::"
+          fi
+
+          exit "$TEST_STATUS"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Realtime C1 diagnostic (fresh database)
+        id: c1
+        continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321/
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: http://localhost:3000/
+          NEXT_PUBLIC_HCAPTCHA_SITEKEY: ""
+          C1_DIR: ${{ github.workspace }}/c1-diagnostic
+        run: |
+          set -e
+          mkdir -p "$C1_DIR"
+
+          supabase db reset
+          docker restart supabase_realtime_kaza
+
+          realtime_status=""
+          for i in $(seq 1 30); do
+            realtime_status=$(docker inspect -f '{{.State.Status}}' supabase_realtime_kaza 2>/dev/null || true)
+            if [ "$realtime_status" = "running" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$realtime_status" != "running" ]; then
+            echo "::error::C1: le container Realtime n'est pas revenu à l'état running."
+            docker logs --tail 200 supabase_realtime_kaza || true
+            exit 1
+          fi
+
+          cat >/tmp/kaza-c1-service-role-grants.sql <<'SQL'
+          grant usage on schema public to service_role;
+          grant select, insert, update, delete on all tables in schema public to service_role;
+          grant usage, select on all sequences in schema public to service_role;
+          notify pgrst, 'reload schema';
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/kaza-c1-service-role-grants.sql
+
+          cd apps/web
+          set +e
+          E2E_REALTIME_DIAG=1 \
+          PLAYWRIGHT_JSON_OUTPUT_FILE="$C1_DIR/playwright-c1.json" \
+            npx playwright test --project=chromium --grep "Diagnostic Realtime C1" \
+              --reporter=list,json \
+              --trace=retain-on-failure \
+              --output="$C1_DIR/test-results" 2>&1 | tee "$C1_DIR/playwright-c1.log"
+          C1_STATUS=${PIPESTATUS[0]}
+          set -e
+          cd ../..
+
+          docker logs --tail 500 supabase_realtime_kaza > "$C1_DIR/realtime.log" 2>&1 || true
+          grep -F '[KAZA:C1]' "$C1_DIR/playwright-c1.log" > "$C1_DIR/kaza-c1-stdout.log" || true
+
+          node - <<'JS'
+          const fs = require('fs');
+          const path = require('path');
+
+          const dir = process.env.C1_DIR;
+          let failed = false;
+          let report;
+
+          try {
+            report = JSON.parse(fs.readFileSync(path.join(dir, 'playwright-c1.json'), 'utf8'));
+          } catch (error) {
+            console.error(`::error::C1: rapport Playwright JSON absent ou illisible (${error.message})`);
+            process.exit(1);
+          }
+
+          const tests = [];
+          const walk = (suite, titles) => {
+            (suite.suites || []).forEach((child) => walk(child, [...titles, child.title]));
+            (suite.specs || []).forEach((spec) =>
+              (spec.tests || []).forEach((test) =>
+                tests.push({ title: [...titles, spec.title].filter(Boolean).join(' › '), test }),
+              ),
+            );
+          };
+
+          walk(report, []);
+
+          const c1 = tests.filter(({ title }) => title.includes('Diagnostic Realtime C1'));
+          console.log(`C1: ${c1.length} test(s) diagnostic trouvé(s) (attendu : 2)`);
+
+          if (c1.length !== 2) {
+            failed = true;
+            console.error('::error::C1: nombre de tests diagnostic inattendu');
+          }
+
+          const expected = ['c1-chat-diagnostic.json', 'c1-visits-diagnostic.json'];
+          const written = new Set();
+
+          c1.forEach(({ title, test }) => {
+            const results = test.results || [];
+            const attachments = results.flatMap((result) => result.attachments || [])
+              .filter((attachment) => /^c1-.*\.json$/.test(attachment.name) && attachment.body);
+
+            if (test.status === 'skipped') {
+              failed = true;
+              console.error(`::error::C1 SKIPPED — ${title}`);
+            }
+
+            if (attachments.length === 0) {
+              failed = true;
+              console.error(`::error::C1 RAPPORT ABSENT — ${title}`);
+              return;
+            }
+
+            attachments.forEach((attachment) => {
+              const body = Buffer.from(attachment.body, 'base64').toString('utf8');
+              fs.writeFileSync(path.join(dir, attachment.name), body);
+              written.add(attachment.name);
+
+              let parsed;
+              try {
+                parsed = JSON.parse(body);
+              } catch {
+                failed = true;
+                console.error(`::error::C1 rapport illisible — ${attachment.name}`);
+                return;
+              }
+
+              const verdict = parsed.verdict;
+              const meaning = parsed.meaning || '';
+              console.log(`C1 ${attachment.name} observation=${JSON.stringify(parsed.observation)}`);
+
+              const line = `C1 ${attachment.name} — ${title} : statut=${test.status} verdict=${verdict} — ${meaning}`;
+              if (verdict === 'no-reproduction') {
+                console.log(line);
+              } else {
+                failed = true;
+                console.error(`::error title=C1 VERDICT ${verdict}::${line}`);
+              }
+            });
+          });
+
+          expected.filter((name) => !written.has(name)).forEach((name) => {
+            failed = true;
+            console.error(`::error::C1 fichier attendu manquant : ${name}`);
+          });
+
+          fs.writeFileSync(
+            path.join(dir, 'c1-summary.txt'),
+            'C1 diagnostic completed. See workflow logs and JSON attachments for detailed observations.\n',
+          );
+
+          process.exit(failed ? 1 : 0);
+          JS
+
+          if [ "$C1_STATUS" -ne 0 ]; then
+            echo "::error::C1: diagnostic Playwright en échec — voir l'artefact c1-diagnostic."
+            exit "$C1_STATUS"
+          fi
+
+      - name: Upload C1 diagnostic reports
+        if: ${{ !cancelled() && steps.c1.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: c1-diagnostic
+          path: c1-diagnostic/
+          if-no-files-found: error
+          retention-days: 14

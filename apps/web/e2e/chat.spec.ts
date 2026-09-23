@@ -85,17 +85,14 @@ test.describe('Messagerie de bout en bout', () => {
       // Le bailleur répond sans recharger la page du locataire.
       await landlord.getByLabel('Message').fill(landlordMessage);
       await landlord.getByRole('button', { name: 'Envoyer' }).click();
-      await expect(landlord.getByText(landlordMessage)).toBeVisible();
+      await expect(landlord.getByText(landlordMessage, { exact: true })).toBeVisible();
 
       // Régression C1 : la réponse doit arriver dans le fil de la conversation
       // (binding postgres_changes du ChatWindow), et pas seulement dans l'aperçu
       // de la liste latérale, alimenté par un autre channel (`conversations-live`).
-      await expect(tenant.getByTestId('chat-thread').getByText(landlordMessage)).toBeVisible({
-        timeout: 15_000,
-      });
-
-      // C'est l'assertion importante : la réponse arrive par Realtime.
-      await expect(tenant.getByText(landlordMessage)).toBeVisible({ timeout: 15_000 });
+      await expect(
+        tenant.getByTestId('chat-thread').getByText(landlordMessage, { exact: true }),
+      ).toBeVisible({ timeout: 15_000 });
     } finally {
       await logout(tenantContext);
       await tenantContext.close();
@@ -124,7 +121,7 @@ test.describe('Diagnostic Realtime C1 — messagerie', () => {
     const tenant = await tenantContext.newPage();
     const landlord = await landlordContext.newPage();
     const tenantWire = captureRealtimeWire(tenant);
-    const probes: ReturnType<typeof openC1Probes> = [];
+    const probes: Awaited<ReturnType<typeof openC1Probes>> = [];
     const landlordMessage = `C1 diagnostic ${Date.now()}`;
 
     try {
@@ -139,7 +136,7 @@ test.describe('Diagnostic Realtime C1 — messagerie', () => {
       const conversationId = new URL(tenant.url()).pathname.split('/').pop() ?? '';
       expect(conversationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
-      probes.push(...openC1Probes(env, tenantSession, 'messages', 'INSERT', conversationId));
+      probes.push(...await openC1Probes(env, tenantSession, 'messages', 'INSERT', conversationId));
       // note : on n'échoue pas ici — une sonde non prête rend le verdict « inconclusive ».
       await expect
         .poll(() => probesReady(probes), { timeout: 15_000 })
@@ -152,11 +149,11 @@ test.describe('Diagnostic Realtime C1 — messagerie', () => {
       await expect(landlord.getByLabel('Message')).toBeVisible({ timeout: 15_000 });
       await landlord.getByLabel('Message').fill(landlordMessage);
       await landlord.getByRole('button', { name: 'Envoyer' }).click();
-      await expect(landlord.getByText(landlordMessage)).toBeVisible({ timeout: 15_000 });
+      await expect(landlord.getByTestId('chat-thread').getByText(landlordMessage, { exact: true })).toBeVisible({ timeout: 15_000 });
 
       const isTarget = (record: Record<string, unknown>) =>
         record.body === landlordMessage && record.conversation_id === conversationId;
-      const thread = tenant.getByTestId('chat-thread').getByText(landlordMessage);
+      const thread = tenant.getByTestId('chat-thread').getByText(landlordMessage, { exact: true });
       const snapshot = async () =>
         buildC1Report({
           scenario: 'chat: INSERT messages (bailleur → locataire)',

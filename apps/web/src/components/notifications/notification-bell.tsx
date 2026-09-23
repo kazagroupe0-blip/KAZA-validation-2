@@ -43,9 +43,17 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const liveNotificationsRef = useRef(new Map<string, AppNotification>());
+  const liveNotificationsUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
+
+    if (liveNotificationsUserIdRef.current !== user.id) {
+      liveNotificationsUserIdRef.current = user.id;
+      liveNotificationsRef.current.clear();
+      setItems([]);
+      setUnread(0);
+    }
     let mounted = true;
 
     const load = async () => {
@@ -82,58 +90,57 @@ export function NotificationBell() {
     };
     window.addEventListener('kaza:notifications-refresh', onNotificationsRefresh);
 
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) supabaseRealtime.realtime.setAuth(session.access_token);
-    });
-
-    // Notifications temps réel : insérer + retirer les alertes résolues.
-    // Le client Realtime dédié n'a pas de session persistée : on injecte donc
-    // explicitement le JWT avant de créer le Channel.
+    // Notifications temps réel — même règle : setAuth doit être terminé avant le join.
     let channel: ReturnType<typeof supabaseRealtime.channel> | null = null;
     let authSubscription: { unsubscribe: () => void } | null = null;
     let cancelled = false;
+    let connecting = false;
 
-    const connect = (accessToken: string | null) => {
-      if (!accessToken || cancelled || channel) return;
+    const connect = async (accessToken: string | null) => {
+      if (!accessToken || cancelled || channel || connecting) return;
+      connecting = true;
 
-      supabaseRealtime.realtime.setAuth(accessToken);
-      channel = supabaseRealtime
-        .channel(`notifications:${user.id}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-          (payload: RealtimePostgresInsertPayload<AppNotification>) => {
-            const n = payload.new as AppNotification;
-            if (n.resolved_at) return;
-            liveNotificationsRef.current.set(n.id, n);
-            setItems((prev) => [n, ...prev.filter((item) => item.id !== n.id)].slice(0, 30));
-            if (!n.read_at) setUnread((u) => u + 1);
-          },
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-          (payload) => {
-            const n = payload.new as AppNotification;
-            if (!n.resolved_at) return;
-            liveNotificationsRef.current.delete(n.id);
-            setItems((prev) => prev.filter((item) => item.id !== n.id));
-            if (!n.read_at) setUnread((u) => Math.max(0, u - 1));
-          },
-        )
-        .subscribe();
+      try {
+        await supabaseRealtime.realtime.setAuth(accessToken);
+        if (cancelled) return;
+
+        channel = supabaseRealtime
+          .channel(`notifications:${user.id}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+            (payload: RealtimePostgresInsertPayload<AppNotification>) => {
+              const n = payload.new as AppNotification;
+              if (n.resolved_at) return;
+              liveNotificationsRef.current.set(n.id, n);
+              setItems((prev) => [n, ...prev.filter((item) => item.id !== n.id)].slice(0, 30));
+              if (!n.read_at) setUnread((u) => u + 1);
+            },
+          )
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+            (payload) => {
+              const n = payload.new as AppNotification;
+              if (!n.resolved_at) return;
+              liveNotificationsRef.current.delete(n.id);
+              setItems((prev) => prev.filter((item) => item.id !== n.id));
+              if (!n.read_at) setUnread((u) => Math.max(0, u - 1));
+            },
+          )
+          .subscribe();
+      } finally {
+        connecting = false;
+      }
     };
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!cancelled) connect(session?.access_token ?? null);
+      if (!cancelled) void connect(session?.access_token ?? null);
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
-      if (session) {
-        supabaseRealtime.realtime.setAuth(session.access_token);
-        connect(session.access_token);
-      }
+      if (session) void connect(session.access_token);
     });
     authSubscription = data.subscription;
 
@@ -144,7 +151,7 @@ export function NotificationBell() {
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
       if (channel) void supabaseRealtime.removeChannel(channel);
     };
-  }, [user]);
+  }, [user?.id]);
 
   // Fermeture au clic extérieur + Échap.
   useEffect(() => {
