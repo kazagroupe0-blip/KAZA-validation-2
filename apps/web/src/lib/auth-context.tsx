@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useRouter } from 'next/navigation';
 import { supabase } from './supabase-client';
 import type { Profile, Role } from './types';
-import { getMyProfile } from './supabase-api';
+import { resolveAuthProfile } from './auth-refresh';
 
 export interface AuthState {
   loading: boolean;
@@ -24,23 +24,20 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
   const router = useRouter();
 
   const refresh = useCallback(async () => {
-    // getUser() valide le JWT côté serveur (plus sûr que getSession, autorisé localement)
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const result = await resolveAuthProfile();
+
+    if (result.kind === 'signed-out') {
       setProfile(null);
-      setLoading(false);
-      return;
-    }
-    try {
+    } else if (result.kind === 'authenticated') {
       // note : le profil (rôle) vient de la table profiles — source de vérité unique
-      const me = await getMyProfile();
-      setProfile(me);
-    } catch {
-      await supabase.auth.signOut();
-      setProfile(null);
-    } finally {
-      setLoading(false);
+      setProfile(result.profile);
+    } else {
+      // Une panne d'auth/profil ne doit pas détruire une session encore valide.
+      // Le prochain événement d'authentification réel recalculera l'état.
+      console.error('[KAZA:AUTH] refresh unavailable', result.error);
     }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {

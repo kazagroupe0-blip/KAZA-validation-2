@@ -60,8 +60,7 @@ export async function initFedapayPayment(
 }
 
 export async function confirmPayment(paymentId: string): Promise<void> {
-  const user = await requireUser().catch(() => null);
-  if (!user) return;
+  const user = await requireUser();
   const { error } = await supabase
     .from('payments')
     .update({
