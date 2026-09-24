@@ -1,4 +1,5 @@
 name: CI Full
+# validation phase-b exact-head certification
 
 on:
   workflow_dispatch:
