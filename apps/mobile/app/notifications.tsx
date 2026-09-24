@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -45,9 +46,11 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
+    setLoadError(null);
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -58,7 +61,9 @@ export default function NotificationsScreen() {
         .limit(50);
       if (error) throw error;
       setNotifications((data ?? []) as unknown as AppNotification[]);
-    } catch {} finally {
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Impossible de charger les notifications.');
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -68,14 +73,28 @@ export default function NotificationsScreen() {
 
   const handleMarkAllRead = async () => {
     if (!user) return;
-    await supabase.rpc('mark_all_notifications_read');
-    setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
+    try {
+      const { error } = await supabase.rpc('mark_all_notifications_read');
+      if (error) throw error;
+      setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
+    } catch (error) {
+      Alert.alert('Notifications', error instanceof Error ? error.message : 'Impossible de marquer les notifications comme lues.');
+    }
   };
 
   const handlePress = async (notif: AppNotification) => {
     if (!notif.read_at) {
-      await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', notif.id);
-      setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, read_at: new Date().toISOString() } : n));
+      try {
+        const { error } = await supabase
+          .from('notifications')
+          .update({ read_at: new Date().toISOString() })
+          .eq('id', notif.id);
+        if (error) throw error;
+        setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, read_at: new Date().toISOString() } : n));
+      } catch (error) {
+        Alert.alert('Notification', error instanceof Error ? error.message : 'Impossible de marquer la notification comme lue.');
+        return;
+      }
     }
     const meta = notif.data as Record<string, string> | null;
     if (meta?.href) router.push(meta.href);
