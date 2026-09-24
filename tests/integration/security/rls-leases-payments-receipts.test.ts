@@ -174,7 +174,8 @@ describe('RLS: leases, payments, receipts tables', () => {
         p_start_date: new Date().toISOString().split('T')[0],
         p_monthly_rent: 100000,
       });
-      expect(error).toBeDefined();
+      // create_lease lève pour un non-propriétaire : erreur réelle attendue (null est « défini »).
+      expect(error).not.toBeNull();
     });
   });
 
@@ -249,7 +250,8 @@ describe('RLS: leases, payments, receipts tables', () => {
         p_period_start: periodStart,
         p_period_end: periodEnd,
       });
-      expect(error).toBeDefined();
+      // report_cash_payment lève si l'appelant n'est pas le locataire du bail.
+      expect(error).not.toBeNull();
     });
 
     it('tenant CANNOT inject amount mismatch (server validates)', async () => {
@@ -263,8 +265,8 @@ describe('RLS: leases, payments, receipts tables', () => {
         p_period_start: periodStart,
         p_period_end: periodEnd,
       });
-      // Should be blocked by amount validation trigger
-      expect(error).toBeDefined();
+      // Should be blocked by amount validation trigger (0.5x–6x du loyer).
+      expect(error).not.toBeNull();
     });
 
     it('tenant CANNOT inject confirmed status directly', async () => {
@@ -282,7 +284,15 @@ describe('RLS: leases, payments, receipts tables', () => {
         provider: 'cash',
         status: 'confirmed',
       });
-      expect(error).toBeDefined();
+      // Aucune policy INSERT sur payments (migration 999999) : l'INSERT direct doit être refusé,
+      // pas seulement renvoyer un objet error « défini ».
+      expect(error).not.toBeNull();
+      // Invariant d'état : aucun paiement n'a été créé par ce chemin direct.
+      const { count } = await supabaseAdmin
+        .from('payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('lease_id', leaseId);
+      expect(count).toBe(0);
     });
   });
 
@@ -292,20 +302,25 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = new Date().toISOString().split('T')[0];
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      const { error } = await getClient(tenantA).from('payments').update({ status: 'confirmed' }).eq('id', paymentId);
-      expect(error).toBeDefined();
+      // Le locataire n'est pas couvert par payments_update_landlord (USING landlord_id = auth.uid()) :
+      // sous PostgREST/RLS l'UPDATE ne matche aucune ligne et NE renvoie PAS d'erreur.
+      // L'invariant vérifiable est donc que le statut reste 'pending' (pas « error défini »).
+      await getClient(tenantA).from('payments').update({ status: 'confirmed' }).eq('id', paymentId);
+      const { data: after } = await supabaseAdmin.from('payments').select('status').eq('id', paymentId).single();
+      expect(after?.status).toBe('pending');
     });
 
-    it('landlord CANNOT confirm payment via direct update (RLS blocks)', async () => {
+    it('landlord CANNOT confirm a payment without confirmed_at (incomplete update rejected)', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const periodStart = new Date().toISOString().split('T')[0];
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
+      // Confirmer sans confirmed_at viole le garde payments_before_update_guard (« confirmed_at requis »).
+      // Ce test était auparavant vide (aucune assertion). Invariant : l'update est refusé ET le paiement reste 'pending'.
       const { error } = await getClient(landlordA).from('payments').update({ status: 'confirmed' }).eq('id', paymentId);
-      // Should be blocked - landlord can only confirm via direct UPDATE with proper fields
-      // But RLS policy payments_update_landlord should allow landlord to update their property's payments
-      // Let's check if the update succeeds (it should with proper RLS)
-      // The test expectation depends on the actual RLS policy
+      expect(error).not.toBeNull();
+      const { data: after } = await supabaseAdmin.from('payments').select('status').eq('id', paymentId).single();
+      expect(after?.status).toBe('pending');
     });
 
     it('landlord CAN confirm payment via direct UPDATE (app pattern)', async () => {
@@ -341,13 +356,13 @@ describe('RLS: leases, payments, receipts tables', () => {
           confirmed_by: landlordA.user.id,
         })
         .eq('id', paymentId);
-      // Receipt auto-created by trigger
-      const { data: receipts } = await getClient(tenantA).from('receipts').select('*').eq('payment_id', paymentId);
-      if (receipts && receipts.length > 0) {
-        const { data, error } = await getClient(tenantA).from('receipts').select('*').eq('id', receipts[0].id).single();
-        expect(error).toBeNull();
-        expect(data).toBeDefined();
-      }
+      // La quittance est créée par le trigger sur pending→confirmed : elle DOIT exister
+      // (l'ancien `if (length>0)` faisait passer le test à vide si le trigger ne se déclenchait pas).
+      const { data: receipts } = await supabaseAdmin.from('receipts').select('id').eq('payment_id', paymentId);
+      expect(receipts?.length).toBe(1);
+      const { data, error } = await getClient(tenantA).from('receipts').select('*').eq('id', receipts![0].id).single();
+      expect(error).toBeNull();
+      expect(data).toBeDefined();
     });
 
     it('tenant B CANNOT see tenant A receipt', async () => {
@@ -363,12 +378,13 @@ describe('RLS: leases, payments, receipts tables', () => {
           confirmed_by: landlordA.user.id,
         })
         .eq('id', paymentId);
-      const { data: receipts } = await getClient(tenantA).from('receipts').select('*').eq('payment_id', paymentId);
-      if (receipts && receipts.length > 0) {
-        const { data, error } = await getClient(tenantB).from('receipts').select('*').eq('id', receipts[0].id).single();
-        expect(error).toBeDefined();
-        expect(data).toBeNull();
-      }
+      // La quittance existe (trigger) ; le test ne doit pas être vacant.
+      const { data: receipts } = await supabaseAdmin.from('receipts').select('id').eq('payment_id', paymentId);
+      expect(receipts?.length).toBe(1);
+      const { data, error } = await getClient(tenantB).from('receipts').select('*').eq('id', receipts![0].id).single();
+      // SELECT filtré par RLS : le guard fort est data=null (une fuite ferait échouer cette assertion).
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
     });
   });
 });
