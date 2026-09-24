@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   Settings,
   History,
@@ -387,7 +388,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MenuItem({ icon: Icon, label, onPress, last }: { icon: any; label: string; onPress: () => void; last?: boolean }) {
+function MenuItem({ icon: Icon, label, onPress, last }: { icon: LucideIcon; label: string; onPress: () => void; last?: boolean }) {
   return (
     <TouchableOpacity onPress={onPress} className={`flex-row items-center px-4 py-3.5 ${last ? '' : 'border-b border-slate-100'}`}>
       <Icon size={20} color="#64748B" />
