@@ -1,9 +1,8 @@
 -- Converge profile UPDATE RLS into one canonical policy.
 -- Sensitive fields remain protected by profiles_guard_sensitive().
 --
--- This migration is object-idempotent: an existing policy is altered in place;
--- it is never assumed absent. That makes fresh resets and repeated application
--- safe even when an earlier migration or environment already created the name.
+-- Object-idempotent: alter the canonical policy when it already exists,
+-- otherwise create it. Superseded policy names are removed first.
 do $$
 begin
   drop policy if exists profiles_update_own on public.profiles;
