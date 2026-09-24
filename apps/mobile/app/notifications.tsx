@@ -8,6 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   Bell,
   Home,
@@ -28,7 +29,7 @@ const TABS = [
   { key: 'abonnements', label: 'Abonnements' },
 ];
 
-const ICON_MAP: Record<string, { icon: any; bg: string; color: string }> = {
+const ICON_MAP: Record<string, { icon: LucideIcon; bg: string; color: string }> = {
   message: { icon: Home, bg: '#0E4728', color: '#FFF' },
   lease: { icon: Home, bg: '#0E4728', color: '#FFF' },
   visit: { icon: CheckCircle, bg: '#0E4728', color: '#FFF' },
