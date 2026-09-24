@@ -1,6 +1,6 @@
 // Re-export database-generated types for application use
-// DO NOT EDIT MANUALLY — Database is generated in packages/shared/src/database.types.ts.
-// Run `npm run db:types` to regenerate the canonical shared source.
+// DO NOT EDIT MANUALLY — this file derives from database.types.ts
+// Run `npm run db:types` to regenerate the source
 
 import type { Database } from './database.types';
 
