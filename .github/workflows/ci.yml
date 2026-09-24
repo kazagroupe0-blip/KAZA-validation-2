@@ -58,3 +58,24 @@ jobs:
             echo "::error::Secret ou clé détecté(e) dans le code source. Retirez-le avant de merger."
             exit 1
           fi
+
+  mobile-quality:
+    name: Mobile typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck mobile
+        run: npm run typecheck:mobile
