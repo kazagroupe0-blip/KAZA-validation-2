@@ -93,10 +93,34 @@ test.describe('Landlord profile completion', () => {
     const notificationPanel = page.getByRole('region', { name: 'Notifications' });
     await expect(notificationPanel.getByText(/profil propriétaire incomplet/i)).toBeVisible();
 
+    page.on('request', (request) => {
+      if (request.url().includes('/rest/v1/profiles') && request.method() !== 'GET') {
+        console.log('DIAG profile-request', request.method(), request.url(), request.postData() ?? '');
+      }
+    });
+    page.on('response', async (response) => {
+      if (response.url().includes('/rest/v1/profiles')) {
+        console.log('DIAG profile-response', response.status(), response.url());
+        try { console.log('DIAG profile-response-body', await response.text()); } catch {}
+      }
+    });
+    console.log('DIAG before-save', {
+      businessName: await page.getByRole('textbox', { name: /nom ou raison sociale/i }).inputValue(),
+      momoProvider: await page.getByRole('combobox', { name: /opérateur mobile money/i }).inputValue(),
+      momoNumber: await page.getByRole('textbox', { name: /numéro mobile money/i }).inputValue(),
+    });
     await page.getByRole('textbox', { name: /nom ou raison sociale/i }).fill('KAZA Immo Test');
     await page.getByLabel(/opérateur mobile money/i).selectOption('mtn');
     await page.getByLabel(/numéro mobile money/i).fill('+2290190000000');
     await page.getByRole('button', { name: /enregistrer les modifications/i }).click();
+    await page.waitForTimeout(1000);
+    console.log('DIAG after-save', {
+      businessName: await page.getByRole('textbox', { name: /nom ou raison sociale/i }).inputValue(),
+      momoProvider: await page.getByRole('combobox', { name: /opérateur mobile money/i }).inputValue(),
+      momoNumber: await page.getByRole('textbox', { name: /numéro mobile money/i }).inputValue(),
+      completionVisible: await page.getByText(/profil propriétaire complet/i).isVisible().catch(() => false),
+      incompleteVisible: await page.getByText(/profil propriétaire incomplet/i).isVisible().catch(() => false),
+    });
 
     await expect(page.getByText(/profil propriétaire complet/i)).toBeVisible({ timeout: 10_000 });
 
