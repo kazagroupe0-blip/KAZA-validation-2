@@ -24,6 +24,7 @@ import { apiToast } from '@/lib/api-toast';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import { logger } from '@/lib/logger';
 import {
   INITIAL_REALTIME_HEALTH,
   applySubscribeStatus,
@@ -126,7 +127,12 @@ export function ChatWindow() {
               const m = payload.new as Message;
               setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
               if (m.sender_id !== user?.id) {
-                void markConversationRead(id).catch(() => undefined);
+                void markConversationRead(id).catch((error) => {
+                  logger.warn('chat_mark_read_failed', {
+                    userId: user?.id,
+                    message: error instanceof Error ? error.message : 'Mise à jour de lecture impossible',
+                  });
+                });
               }
             },
           )
@@ -171,7 +177,12 @@ export function ChatWindow() {
   // marquer lu + défilement en bas
   useEffect(() => {
     if (user && messages.length > 0) {
-      void markConversationRead(id).catch(() => undefined);
+      void markConversationRead(id).catch((error) => {
+        logger.warn('chat_mark_read_failed', {
+          userId: user?.id,
+          message: error instanceof Error ? error.message : 'Mise à jour de lecture impossible',
+        });
+      });
     }
   }, [id, user, messages.length]);
 
