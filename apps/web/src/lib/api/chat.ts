@@ -60,14 +60,15 @@ export async function sendMessage(
 }
 
 export async function markConversationRead(conversationId: string): Promise<void> {
-  const user = await requireUser().catch(() => null);
-  if (!user) return;
-  await supabase
+  const user = await requireUser();
+  const { error } = await supabase
     .from('messages')
     .update({ read_at: new Date().toISOString() })
     .eq('conversation_id', conversationId)
     .neq('sender_id', user.id)
     .is('read_at', null);
+
+  if (error) throw normalizeError(error, 'Mise à jour de la lecture impossible');
 }
 
 export async function confirmVisit(visitId: string): Promise<void> {
