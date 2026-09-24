@@ -136,7 +136,9 @@ describe('RLS: conversations & messages tables', () => {
     it('landlord cannot open a tenant conversation through the contact RPC', async () => {
       const residenceId = await createPublishedVerifiedResidence(landlordA);
       const result = await getClient(landlordB).rpc('open_conversation', { p_residence_id: residenceId });
-      expect(result.error).toBeDefined();
+      // open_conversation lève pour un non-locataire : l'appel doit renvoyer une erreur réelle,
+      // pas simplement un objet error "défini" (null est aussi "défini").
+      expect(result.error).not.toBeNull();
     });
 
     it('tenant cannot open a conversation for a non-free residence', async () => {
@@ -158,7 +160,7 @@ describe('RLS: conversations & messages tables', () => {
       if (error) throw error;
 
       const result = await getClient(tenantA).rpc('open_conversation', { p_residence_id: data.id });
-      expect(result.error).toBeDefined();
+      expect(result.error).not.toBeNull();
     });
 
     it('tenant CAN open conversation via RPC (not direct insert)', async () => {
@@ -175,7 +177,15 @@ describe('RLS: conversations & messages tables', () => {
         landlord_id: landlordA.user.id,
         tenant_id: tenantA.user.id,
       });
-      expect(error).toBeDefined();
+      // Seul open_conversation() (SECURITY DEFINER) doit créer une conversation.
+      // L'INSERT direct doit être refusé (RLS/grant), pas seulement renvoyer un objet "défini".
+      expect(error).not.toBeNull();
+      // Invariant d'état : aucune conversation n'a été créée par ce chemin direct.
+      const { count } = await supabaseAdmin
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('residence_id', residenceId);
+      expect(count).toBe(0);
     });
 
     it('landlord CANNOT directly insert into conversations', async () => {
@@ -185,7 +195,12 @@ describe('RLS: conversations & messages tables', () => {
         landlord_id: landlordA.user.id,
         tenant_id: tenantA.user.id,
       });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
+      const { count } = await supabaseAdmin
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('residence_id', residenceId);
+      expect(count).toBe(0);
     });
   });
 
@@ -243,7 +258,7 @@ describe('RLS: conversations & messages tables', () => {
         body: 'Hack attempt',
         kind: 'text',
       });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
     });
 
     it('sender_id spoofing is prevented', async () => {
@@ -254,7 +269,7 @@ describe('RLS: conversations & messages tables', () => {
         body: 'Fake message from landlord',
         kind: 'text',
       });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
     });
 
     it('message kind is validated (no spoofing visit_agreed)', async () => {
@@ -266,7 +281,7 @@ describe('RLS: conversations & messages tables', () => {
         kind: 'visit_agreed',
       });
       // Should be rejected - only landlord via agree_visit can create visit_agreed
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
     });
   });
 
@@ -343,7 +358,7 @@ describe('RLS: conversations & messages tables', () => {
   });
 
   describe('messages UPDATE/DELETE', () => {
-    it('user CANNOT update messages', async () => {
+    it('a message sender CANNOT modify their message content (content immutable)', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       await getClient(tenantA).from('messages').insert({
         conversation_id: convId,
@@ -353,11 +368,15 @@ describe('RLS: conversations & messages tables', () => {
       });
       const { data: msgs } = await getClient(tenantA).from('messages').select('id').eq('conversation_id', convId);
       const msgId = msgs![0].id;
-      const { error } = await getClient(tenantA).from('messages').update({ body: 'Hacked' }).eq('id', msgId);
-      expect(error).toBeDefined();
+      // Le sender n'est pas couvert par messages_update_read (USING sender_id <> auth.uid()) :
+      // sous PostgREST/RLS l'UPDATE ne matche aucune ligne et NE renvoie PAS d'erreur.
+      // L'invariant vérifiable est donc que le contenu reste inchangé (pas « error défini »).
+      await getClient(tenantA).from('messages').update({ body: 'Hacked' }).eq('id', msgId);
+      const { data: after } = await supabaseAdmin.from('messages').select('body').eq('id', msgId).single();
+      expect(after?.body).toBe('Original');
     });
 
-    it('user CANNOT delete messages', async () => {
+    it('messages cannot be deleted by a participant (row persists)', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       await getClient(tenantA).from('messages').insert({
         conversation_id: convId,
@@ -367,8 +386,11 @@ describe('RLS: conversations & messages tables', () => {
       });
       const { data: msgs } = await getClient(tenantA).from('messages').select('id').eq('conversation_id', convId);
       const msgId = msgs![0].id;
-      const { error } = await getClient(tenantA).from('messages').delete().eq('id', msgId);
-      expect(error).toBeDefined();
+      // Aucune policy DELETE sur messages : le DELETE ne matche aucune ligne, sans erreur.
+      // Invariant : la ligne existe toujours.
+      await getClient(tenantA).from('messages').delete().eq('id', msgId);
+      const { data: after } = await supabaseAdmin.from('messages').select('id').eq('id', msgId).maybeSingle();
+      expect(after?.id).toBe(msgId);
     });
   });
 });
