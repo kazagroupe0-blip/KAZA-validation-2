@@ -54,13 +54,29 @@ test.describe('Cycle de modération des résidences', () => {
     await expect(page.getByTestId('moderation-status')).toContainText('Brouillon');
 
     await page.getByLabel('Titre').fill(PENDING_TITLE);
+    const storageResponses: string[] = [];
+    const storageFailures: string[] = [];
+    page.on('response', (response) => {
+      if (response.url().includes('/storage/v1/object/')) {
+        storageResponses.push(String(response.status()) + ' ' + response.url());
+      }
+    });
+    page.on('requestfailed', (request) => {
+      if (request.url().includes('/storage/v1/object/')) {
+        storageFailures.push((request.failure()?.errorText ?? 'request failed') + ' ' + request.url());
+      }
+    });
     const fileInput = page.getByLabel('Ajouter des photos');
     await fileInput.setInputFiles({
       name: 'kaza-e2e.jpg',
       mimeType: 'image/jpeg',
       buffer: Buffer.from(JPEG_BASE64, 'base64'),
     });
-    await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retirer la photo' }).first()).toBeVisible({ timeout: 10_000 }).catch((error) => {
+      throw new Error(
+        String(error) + '\nStorage responses: ' + (storageResponses.join(' | ') || 'none') + '\nStorage failures: ' + (storageFailures.join(' | ') || 'none'),
+      );
+    });
 
     await page.getByRole('button', { name: 'Enregistrer les modifications' }).click();
     await expect(page).toHaveURL(/\/landlord\/dashboard\/?$/);
