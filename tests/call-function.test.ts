@@ -59,12 +59,12 @@ describe('callFunction', () => {
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);
 
-    const fetchMock = vi.fn().mockResolvedValue(
+    const fetchMock = vi.fn().mockImplementation(async () => (
       new Response(JSON.stringify({ error: 'Fournisseur de paiement indisponible.' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+      })
+    ));
     vi.stubGlobal('fetch', fetchMock);
 
     const promise = callFunction('fedapay-init', { paymentId: 'payment-1' });
