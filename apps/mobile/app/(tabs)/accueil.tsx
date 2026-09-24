@@ -222,7 +222,7 @@ export default function AccueilScreen() {
                   onPress={() => router.push(`/residence/${item.id}`)}
                   isFavorite={favoriteIds.has(item.id)}
                   onToggleFavorite={() => toggleFavorite(item.id)}
-                  verified={(item as any).is_verified}
+                  verified={item.is_verified}
                 />
               ))
             )}
