@@ -193,7 +193,8 @@ export async function withdrawResidencePublication(id: string): Promise<void> {
 }
 
 export async function incrementResidenceViews(id: string): Promise<void> {
-  await supabase.rpc('increment_residence_views', { p_id: id });
+  const { error } = await supabase.rpc('increment_residence_views', { p_id: id });
+  if (error) throw normalizeError(error, 'Mise à jour du compteur de vues impossible');
 }
 
 export async function toggleFavorite(residenceId: string): Promise<boolean> {
