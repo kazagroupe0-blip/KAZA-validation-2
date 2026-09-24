@@ -49,6 +49,38 @@ export function normalizeError(err: unknown, fallback: string): ApiError {
   return new ApiError(400, fallback);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function extractFunctionError(payload: unknown, status: number): {
+  message: string;
+  fields?: Record<string, string[]>;
+} {
+  if (isRecord(payload)) {
+    const fields =
+      isRecord(payload.fields) &&
+      Object.values(payload.fields).every(
+        (value) => Array.isArray(value) && value.every((item) => typeof item === 'string'),
+      )
+        ? (payload.fields as Record<string, string[]>)
+        : undefined;
+    const message =
+      typeof payload.error === 'string'
+        ? payload.error
+        : typeof payload.message === 'string'
+          ? payload.message
+          : typeof payload.error_description === 'string'
+            ? payload.error_description
+            : typeof payload.msg === 'string'
+              ? payload.msg
+              : 'Erreur HTTP ' + status;
+    return { message, fields };
+  }
+
+  return { message: 'Erreur HTTP ' + status };
+}
+
 async function callFunction<T>(name: string, body: unknown): Promise<T> {
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) throw new ApiError(401, 'Session invalide — reconnectez-vous');
@@ -68,19 +100,21 @@ async function callFunction<T>(name: string, body: unknown): Promise<T> {
         },
         body: JSON.stringify(body),
       });
-      const payload = (await res.json().catch(() => null)) as { error?: string } | T | null;
+
+      const payload = await res.json().catch(() => null);
+
       if (!res.ok) {
-        const error = new Error(`HTTP ${res.status}`) as Error & { status: number };
-        error.status = res.status;
-        throw error;
+        const parsed = extractFunctionError(payload, res.status);
+        throw new ApiError(res.status, parsed.message, parsed.fields);
       }
+
       return payload as T;
     },
     {
       maxRetries: 2,
       baseDelayMs: 500,
       retryableStatuses: [429, 500, 502, 503, 504],
-    }
+    },
   );
 }
 
