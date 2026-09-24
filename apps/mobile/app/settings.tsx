@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Switch, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   Lock,
   Shield,
@@ -101,7 +102,7 @@ function SettingsRow({
   onPress,
   last,
 }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   rightText?: string;
   onPress: () => void;
