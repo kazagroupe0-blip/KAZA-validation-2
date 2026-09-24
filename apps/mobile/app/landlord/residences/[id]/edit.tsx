@@ -43,8 +43,8 @@ export default function EditResidenceScreen() {
         setPrice(String(r.price_monthly ?? ''));
         setDescription(r.description ?? '');
         setPhotos(r.photos ?? []);
-        setModerationStatus((r as any).moderation_status ?? ((r as any).is_verified ? 'approved' : (r as any).is_published ? 'pending' : 'draft'));
-        setModerationReason((r as any).moderation_reason ?? null);
+        setModerationStatus(r.moderation_status || (r.is_verified ? 'approved' : r.is_published ? 'pending' : 'draft'));
+        setModerationReason(r.moderation_reason ?? null);
         if (r.deposit && r.price_monthly) {
           setCautionMonths(String(Math.round(Number(r.deposit) / Number(r.price_monthly))));
         }
@@ -81,8 +81,12 @@ export default function EditResidenceScreen() {
         } else {
           const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
           const response = await fetch(uri);
+          if (!response.ok) throw new Error('Impossible de lire la photo sélectionnée.');
           const blob = await response.blob();
-          await supabase.storage.from('residence-photos').upload(fileName, blob, { contentType: 'image/jpeg' });
+          const { error: uploadError } = await supabase.storage
+            .from('residence-photos')
+            .upload(fileName, blob, { contentType: 'image/jpeg' });
+          if (uploadError) throw uploadError;
           const { data: urlData } = supabase.storage.from('residence-photos').getPublicUrl(fileName);
           uploadedPhotos.push(urlData.publicUrl);
         }
@@ -98,15 +102,15 @@ export default function EditResidenceScreen() {
           deposit: priceNum * cautionNum,
           description,
           photos: uploadedPhotos,
-        } as any)
+        })
         .eq('id', id);
 
       if (error) throw error;
       Alert.alert('Succès', 'Annonce mise à jour.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message ?? 'Échec de la mise à jour.');
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Échec de la mise à jour.');
     } finally {
       setSaving(false);
     }
@@ -127,8 +131,8 @@ export default function EditResidenceScreen() {
         setModerationReason(null);
         Alert.alert('Envoyée en modération', 'Elle sera visible publiquement uniquement après validation.');
       }
-    } catch (err: any) {
-      Alert.alert('Action impossible', err.message ?? 'Une erreur est survenue.');
+    } catch (err: unknown) {
+      Alert.alert('Action impossible', err instanceof Error ? err.message : 'Une erreur est survenue.');
     }
   };
 
