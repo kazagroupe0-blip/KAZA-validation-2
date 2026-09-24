@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeError } from '../apps/web/src/lib/supabase-api';
+import { ApiError, normalizeError } from '../apps/web/src/lib/supabase-api';
 
 describe('normalizeError', () => {
   it('returns 409 for P0001 (business conflict)', () => {
@@ -50,5 +50,27 @@ describe('normalizeError', () => {
     const result = normalizeError(null, 'Fallback msg');
     expect(result.status).toBe(400);
     expect(result.message).toBe('Fallback msg');
+  });
+
+  it('preserves an explicit HTTP status and structured fields', () => {
+    const err = {
+      status: 422,
+      code: 'VALIDATION_ERROR',
+      message: 'Données invalides',
+      details: 'Le prix est obligatoire',
+      hint: 'Corrigez les champs marqués',
+      fields: { price_monthly: ['Champ requis'] },
+    };
+    const result = normalizeError(err, 'fallback');
+    expect(result.status).toBe(422);
+    expect(result.code).toBe('VALIDATION_ERROR');
+    expect(result.details).toBe('Le prix est obligatoire');
+    expect(result.hint).toBe('Corrigez les champs marqués');
+    expect(result.fields).toEqual({ price_monthly: ['Champ requis'] });
+  });
+
+  it('reuses an existing ApiError without changing its contract', () => {
+    const original = new ApiError(503, 'Service indisponible', undefined, { code: 'UPSTREAM' });
+    expect(normalizeError(original, 'fallback')).toBe(original);
   });
 });
