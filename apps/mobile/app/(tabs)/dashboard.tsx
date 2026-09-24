@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   View,
   Text,
@@ -45,7 +46,7 @@ export default function DashboardScreen() {
       const list = (data ?? []) as unknown as Residence[];
       setResidences(list);
 
-      const active = list.filter((r) => (r as any).is_published === true).length;
+      const active = list.filter((r) => r.is_published === true).length;
       const totalViews = list.reduce((s, r) => s + (r.views_count ?? 0), 0);
       setStats({ active, maxActive: 5, views: totalViews, contacts: 0 });
     } catch {} finally {
@@ -158,9 +159,9 @@ export default function DashboardScreen() {
               {r.photos?.[0] && (
                 <View className="relative h-40">
                   <Image source={{ uri: r.photos[0] }} className="w-full h-full" contentFit="cover" />
-                  <View className={`absolute top-3 left-3 px-2 py-0.5 rounded-md ${(r as any).is_published ? 'bg-kaza-mint' : 'bg-slate-400'}`}>
+                  <View className={`absolute top-3 left-3 px-2 py-0.5 rounded-md ${r.is_published ? 'bg-kaza-mint' : 'bg-slate-400'}`}>
                     <Text className="text-[10px] font-bold text-white">
-                      {(r as any).is_published ? '● Active' : '● En pause'}
+                      {r.is_published ? '● Active' : '● En pause'}
                     </Text>
                   </View>
                 </View>
@@ -196,7 +197,7 @@ export default function DashboardScreen() {
   );
 }
 
-function KPICard({ icon: Icon, label, value, subtext }: { icon: any; label: string; value: string; subtext: string }) {
+function KPICard({ icon: Icon, label, value, subtext }: { icon: LucideIcon; label: string; value: string; subtext: string }) {
   return (
     <View className="flex-1 bg-slate-50 rounded-xl p-3">
       <Icon size={16} color="#64748B" />
