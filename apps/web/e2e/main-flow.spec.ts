@@ -30,7 +30,9 @@ test.describe('Parcours principal locataire', () => {
     // 4. Envoyer un message dans le chat
     await page.getByLabel('Message').fill('Bonjour, je souhaite visiter le bien. Merci !');
     await page.getByRole('button', { name: 'Envoyer' }).click();
-    await expect(page.getByText('Bonjour, je souhaite visiter le bien. Merci !', { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId('chat-thread').getByText('Bonjour, je souhaite visiter le bien. Merci !', { exact: true }),
+    ).toBeVisible();
 
     // 5. Payer le loyer (mode sandbox)
     await page.goto('/dashboard');
