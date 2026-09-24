@@ -8,6 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   MapPin,
   MessageCircle,
@@ -54,7 +55,7 @@ const MOCK_ALERTS: AlertItem[] = [
   },
 ];
 
-const ICON_MAP: Record<string, { icon: any; color: string }> = {
+const ICON_MAP: Record<string, { icon: LucideIcon; color: string }> = {
   match: { icon: MapPin, color: '#0E4728' },
   update: { icon: MessageCircle, color: '#0E4728' },
   rented: { icon: Home, color: '#64748B' },
