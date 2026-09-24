@@ -31,8 +31,8 @@ export default function LoginScreen() {
       const email = `${phone.replace(/\s/g, '')}@kaza.bj`;
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message ?? 'Identifiants incorrects.');
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Une erreur est survenue.' ?? 'Identifiants incorrects.');
     } finally {
       setLoading(false);
     }
