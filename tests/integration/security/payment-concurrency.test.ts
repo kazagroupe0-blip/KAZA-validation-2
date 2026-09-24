@@ -92,8 +92,11 @@ describe('Payment concurrency & idempotence', () => {
     });
     if (error) throw error;
 
-    // report_cash_payment returns void, query to get the payment ID
-    const { data: payments, error: queryError } = await client
+    // report_cash_payment renvoie void. L'action testée (la déclaration) passe par le
+    // client réel ci-dessus ; la récupération de l'identifiant est un détail technique
+    // de setup, faite côté admin : l'état cible de prod (F-38/F-26) n'accorde PAS
+    // SELECT sur payments à `authenticated`, le harness ne doit pas en dépendre.
+    const { data: payments, error: queryError } = await supabaseAdmin
       .from('payments')
       .select('id')
       .eq('lease_id', leaseId)
@@ -132,7 +135,7 @@ describe('Payment concurrency & idempotence', () => {
       expect(error2).not.toBeNull();
 
       // Verify only one payment exists
-      const { data: payments } = await getClient(tenantA).from('payments').select('*').eq('lease_id', leaseId);
+      const { data: payments } = await supabaseAdmin.from('payments').select('id').eq('lease_id', leaseId);
       expect(payments?.length).toBe(1);
     });
 
@@ -158,12 +161,16 @@ describe('Payment concurrency & idempotence', () => {
       expect(successful.length).toBeLessThanOrEqual(1);
 
       // Verify only one payment exists
-      const { data: payments } = await getClient(tenantA).from('payments').select('*').eq('lease_id', leaseId);
+      const { data: payments } = await supabaseAdmin.from('payments').select('id').eq('lease_id', leaseId);
       expect(payments?.length).toBeLessThanOrEqual(1);
     });
   });
 
   describe('Payment confirmation idempotence', () => {
+    // Caractérisation du parcours applicatif actuel (UPDATE direct du bailleur, F-01).
+    // Les relectures de vérification passent côté admin ; les deux confirmations restent
+    // faites par le client réel du bailleur. Après F-01/F-26 ce test devra passer par la
+    // RPC de confirmation ; sous les grants cibles de prod il échoue déjà (F-26), attendu.
     it('double confirmation on same payment is idempotent', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const periodStart = new Date().toISOString().split('T')[0];
@@ -194,11 +201,11 @@ describe('Payment concurrency & idempotence', () => {
       expect(error2).toBeNull();
 
       // Verify payment is confirmed (not double-counted)
-      const { data: payment } = await getClient(landlordA).from('payments').select('status').eq('id', paymentId).single();
+      const { data: payment } = await supabaseAdmin.from('payments').select('status').eq('id', paymentId).single();
       expect(payment?.status).toBe('confirmed');
 
       // Verify only one receipt was created (by trigger 007)
-      const { data: receipts } = await getClient(landlordA).from('receipts').select('*').eq('payment_id', paymentId);
+      const { data: receipts } = await supabaseAdmin.from('receipts').select('id').eq('payment_id', paymentId);
       expect(receipts?.length).toBe(1);
     });
 
@@ -209,8 +216,9 @@ describe('Payment concurrency & idempotence', () => {
 
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
 
-      // Confirm first
-      await getClient(landlordA)
+      // Setup : confirmation côté admin (la propriété testée est l'immuabilité d'un
+      // paiement confirmé, pas l'autorisation de confirmer — cf. F-01/F-26).
+      const { error: confirmErr } = await supabaseAdmin
         .from('payments')
         .update({
           status: 'confirmed',
@@ -218,6 +226,7 @@ describe('Payment concurrency & idempotence', () => {
           confirmed_by: landlordA.user.id,
         })
         .eq('id', paymentId);
+      expect(confirmErr).toBeNull();
 
       // Try to reject confirmed payment - should fail (trigger prevents status change from confirmed)
       const { error } = await getClient(landlordA)

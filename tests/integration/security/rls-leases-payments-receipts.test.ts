@@ -98,8 +98,11 @@ describe('RLS: leases, payments, receipts tables', () => {
     });
     if (error) throw error;
 
-    // report_cash_payment returns void, query to get the payment ID
-    const { data: payments, error: queryError } = await client
+    // report_cash_payment renvoie void. L'action testée (la déclaration) passe par le
+    // client réel ci-dessus ; la récupération de l'identifiant est un détail technique
+    // de setup, faite côté admin : l'état cible de prod (F-38/F-26) n'accorde PAS
+    // SELECT sur payments à `authenticated`, le harness ne doit pas en dépendre.
+    const { data: payments, error: queryError } = await supabaseAdmin
       .from('payments')
       .select('id')
       .eq('lease_id', leaseId)
@@ -323,6 +326,17 @@ describe('RLS: leases, payments, receipts tables', () => {
       expect(after?.status).toBe('pending');
     });
 
+    // TEST DE CARACTÉRISATION du comportement actuel (F-01) — NE PAS lire comme un invariant.
+    // Il documente que le bailleur peut aujourd'hui confirmer un paiement par UPDATE direct
+    // (payments.ts:61-73). Après correction de F-01/F-26 (confirmation via RPC dédiée +
+    // vérification de la collecte), ce test DOIT devenir négatif, avec pour invariant :
+    //   - confirmation directe d'un paiement `mobile_money` par le bailleur → refusée (erreur) ;
+    //   - statut inchangé (reste 'pending', relu côté admin) ;
+    //   - aucun effet payout (aucune ligne landlord_payouts créée pour ce paiement).
+    // Le paiement `mobile_money` pending devra alors être amorcé côté admin (setup).
+    // Sous les grants cibles de prod (pas de SELECT sur payments), cet UPDATE filtré échoue
+    // déjà (F-26) : le test sera rouge après convergence des grants, ce qui est attendu.
+    // Comportement attendu volontairement inchangé dans ce lot.
     it('landlord CAN confirm payment via direct UPDATE (app pattern)', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const periodStart = new Date().toISOString().split('T')[0];
@@ -347,8 +361,10 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = new Date().toISOString().split('T')[0];
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      // Confirm payment via direct UPDATE (app pattern)
-      await getClient(landlordA)
+      // Setup : confirmation faite côté admin. La propriété testée ici est la visibilité
+      // de la quittance, pas l'autorisation de confirmer ; l'UPDATE filtré du bailleur
+      // dépend d'un SELECT sur payments absent de l'état cible de prod (F-26).
+      const { error: confirmErr } = await supabaseAdmin
         .from('payments')
         .update({
           status: 'confirmed',
@@ -356,6 +372,7 @@ describe('RLS: leases, payments, receipts tables', () => {
           confirmed_by: landlordA.user.id,
         })
         .eq('id', paymentId);
+      expect(confirmErr).toBeNull();
       // La quittance est créée par le trigger sur pending→confirmed : elle DOIT exister
       // (l'ancien `if (length>0)` faisait passer le test à vide si le trigger ne se déclenchait pas).
       const { data: receipts } = await supabaseAdmin.from('receipts').select('id').eq('payment_id', paymentId);
@@ -370,7 +387,9 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = new Date().toISOString().split('T')[0];
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      await getClient(landlordA)
+      // Setup côté admin (voir « tenant CAN see own receipt ») : la propriété testée est
+      // l'isolation des quittances, pas l'autorisation de confirmer.
+      const { error: confirmErr } = await supabaseAdmin
         .from('payments')
         .update({
           status: 'confirmed',
@@ -378,6 +397,7 @@ describe('RLS: leases, payments, receipts tables', () => {
           confirmed_by: landlordA.user.id,
         })
         .eq('id', paymentId);
+      expect(confirmErr).toBeNull();
       // La quittance existe (trigger) ; le test ne doit pas être vacant.
       const { data: receipts } = await supabaseAdmin.from('receipts').select('id').eq('payment_id', paymentId);
       expect(receipts?.length).toBe(1);
