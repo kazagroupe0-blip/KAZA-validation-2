@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - validation/main-mirror-phase-a-20260924
+      - validation/phase-g-mobile-contracts-20260924
 
 concurrency:
-  group: ci-full-${{ github.ref }}
+  group: ci-full-phase-g-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
