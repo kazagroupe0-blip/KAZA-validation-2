@@ -40,7 +40,7 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       setProfile(me);
     } catch (error) {
       logger.error('auth_profile_load_failed', {
-        error,
+        error: error instanceof Error ? error : String(error),
         message: 'Impossible de charger le profil après authentification',
       });
       // Conserver le dernier profil connu pendant une panne transitoire du backend.
