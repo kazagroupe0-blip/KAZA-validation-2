@@ -155,8 +155,7 @@ export async function updatePassword(newPassword: string): Promise<void> {
 }
 
 export async function getMyProfile(): Promise<Profile | null> {
-  const user = await requireUser().catch(() => null);
-  if (!user) return null;
+  const user = await requireUser();
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
