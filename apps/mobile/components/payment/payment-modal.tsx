@@ -78,8 +78,8 @@ export function PaymentModal({ visible, lease, onClose, onSuccess }: PaymentModa
           { text: 'OK', onPress: () => { onSuccess(); onClose(); } },
         ]);
       }
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message ?? 'Paiement échoué');
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Une erreur est survenue.' ?? 'Paiement échoué');
     } finally {
       setLoading(false);
     }
