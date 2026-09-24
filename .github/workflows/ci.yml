@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - validation/phase-b-errors-20260924
   pull_request:
     branches:
       - main
