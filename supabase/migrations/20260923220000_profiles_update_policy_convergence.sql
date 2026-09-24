@@ -3,6 +3,7 @@
 drop policy if exists profiles_update_own on public.profiles;
 drop policy if exists profiles_update_self on public.profiles;
 drop policy if exists profiles_update_admin on public.profiles;
+drop policy if exists profiles_update on public.profiles;
 
 create policy profiles_update
   on public.profiles
