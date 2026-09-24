@@ -30,8 +30,8 @@ export default function ForgotPasswordScreen() {
       const { error } = await supabase.auth.resetPasswordForEmail(email);
       if (error) throw error;
       setSent(true);
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message ?? 'Échec de l\'envoi.');
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Une erreur est survenue.' ?? 'Échec de l\'envoi.');
     } finally {
       setLoading(false);
     }
