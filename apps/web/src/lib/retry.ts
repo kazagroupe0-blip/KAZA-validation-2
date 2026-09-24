@@ -92,34 +92,3 @@ export async function fetchWithRetry(
     options
   );
 }
-
-export function createApiClient(baseUrl: string) {
-  return {
-    async get<T>(path: string, init?: RequestInit): Promise<T> {
-      const response = await fetchWithRetry(`${baseUrl}${path}`, { ...init, method: 'GET' });
-      return response.json();
-    },
-    async post<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
-      const response = await fetchWithRetry(`${baseUrl}${path}`, {
-        ...init,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...init?.headers },
-        body: JSON.stringify(body),
-      });
-      return response.json();
-    },
-    async put<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
-      const response = await fetchWithRetry(`${baseUrl}${path}`, {
-        ...init,
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...init?.headers },
-        body: JSON.stringify(body),
-      });
-      return response.json();
-    },
-    async delete<T>(path: string, init?: RequestInit): Promise<T> {
-      const response = await fetchWithRetry(`${baseUrl}${path}`, { ...init, method: 'DELETE' });
-      return response.json();
-    },
-  };
-}
