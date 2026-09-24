@@ -126,7 +126,7 @@ export function ChatWindow() {
               const m = payload.new as Message;
               setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
               if (m.sender_id !== user?.id) {
-                void markConversationRead(id).catch(() => undefined);
+                void markConversationRead(id).catch((err) => apiToast(toast, err, 'Marquage comme lue impossible'));
               }
             },
           )
@@ -166,14 +166,14 @@ export function ChatWindow() {
       authSubscription?.unsubscribe();
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [id, user?.id]);
+  }, [id, toast, user?.id]);
 
   // marquer lu + défilement en bas
   useEffect(() => {
     if (user && messages.length > 0) {
-      void markConversationRead(id).catch(() => undefined);
+      void markConversationRead(id).catch((err) => apiToast(toast, err, 'Marquage comme lue impossible'));
     }
-  }, [id, user, messages.length]);
+  }, [id, toast, user, messages.length]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
