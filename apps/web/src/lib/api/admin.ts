@@ -2,6 +2,7 @@ import { supabase } from '../supabase-client';
 import type { AdminStats, LandlordPayout, Profile, Residence } from '../types';
 import type { Json } from '../database.types';
 import { normalizeError } from '../supabase-api';
+import { logger } from '../logger';
 
 export async function adminStats(): Promise<AdminStats> {
   const { data, error } = await supabase.rpc('admin_stats');
@@ -106,7 +107,11 @@ async function logAdminAction(
     p_metadata: undefined,
   });
   if (error) {
-    console.error('Failed to log admin action:', error);
+    logger.error('admin_audit_log_failed', {
+      error,
+      message: 'La journalisation de l’action administrateur a échoué',
+      metadata: { action, target_type: targetType, target_id: targetId },
+    });
   }
 }
 
