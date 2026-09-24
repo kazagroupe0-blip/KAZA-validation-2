@@ -49,6 +49,53 @@ export function normalizeError(err: unknown, fallback: string): ApiError {
   return new ApiError(400, fallback);
 }
 
+type FunctionErrorPayload = {
+  error?: unknown;
+  error_description?: unknown;
+  message?: unknown;
+  details?: unknown;
+  fields?: unknown;
+};
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function parseFunctionErrorPayload(payload: unknown, status: number): { message: string; fields?: Record<string, string[]> } {
+  if (!payload || typeof payload !== 'object') {
+    return { message: `Erreur HTTP ${status}` };
+  }
+
+  const body = payload as FunctionErrorPayload;
+  const nestedError = body.error && typeof body.error === 'object'
+    ? body.error as FunctionErrorPayload
+    : null;
+  const message =
+    asNonEmptyString(body.error_description) ??
+    asNonEmptyString(body.message) ??
+    asNonEmptyString(body.error) ??
+    asNonEmptyString(nestedError?.message) ??
+    asNonEmptyString(nestedError?.error_description) ??
+    asNonEmptyString(nestedError?.error) ??
+    asNonEmptyString(body.details) ??
+    asNonEmptyString(nestedError?.details) ??
+    `Erreur HTTP ${status}`;
+
+  const rawFields = body.fields ?? nestedError?.fields;
+  if (rawFields && typeof rawFields === 'object' && !Array.isArray(rawFields)) {
+    const fields: Record<string, string[]> = {};
+    for (const [key, value] of Object.entries(rawFields as Record<string, unknown>)) {
+      if (Array.isArray(value)) {
+        const messages = value.filter((item): item is string => typeof item === 'string');
+        if (messages.length > 0) fields[key] = messages;
+      }
+    }
+    return Object.keys(fields).length > 0 ? { message, fields } : { message };
+  }
+
+  return { message };
+}
+
 async function callFunction<T>(name: string, body: unknown): Promise<T> {
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) throw new ApiError(401, 'Session invalide — reconnectez-vous');
@@ -68,11 +115,10 @@ async function callFunction<T>(name: string, body: unknown): Promise<T> {
         },
         body: JSON.stringify(body),
       });
-      const payload = (await res.json().catch(() => null)) as { error?: string } | T | null;
+      const payload = await res.json().catch(() => null) as FunctionErrorPayload | T | null;
       if (!res.ok) {
-        const error = new Error(`HTTP ${res.status}`) as Error & { status: number };
-        error.status = res.status;
-        throw error;
+        const parsed = parseFunctionErrorPayload(payload, res.status);
+        throw new ApiError(res.status, parsed.message, parsed.fields);
       }
       return payload as T;
     },
