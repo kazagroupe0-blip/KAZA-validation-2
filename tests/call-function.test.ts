@@ -17,7 +17,7 @@ vi.mock('../apps/web/src/lib/env', () => ({
   },
 }));
 
-import { ApiError, callFunction } from '../apps/web/src/lib/supabase-api';
+import { callFunction } from '../apps/web/src/lib/supabase-api';
 
 describe('callFunction', () => {
   beforeEach(() => {
@@ -68,12 +68,13 @@ describe('callFunction', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const promise = callFunction('fedapay-init', { paymentId: 'payment-1' });
-    await vi.advanceTimersByTimeAsync(1500);
-
-    await expect(promise).rejects.toMatchObject({
+    const rejection = expect(promise).rejects.toMatchObject({
       status: 500,
       message: 'Fournisseur de paiement indisponible.',
     });
+
+    await vi.advanceTimersByTimeAsync(1500);
+    await rejection;
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
