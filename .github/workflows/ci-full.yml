@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - validation/run-full-20260923
+      - validation/exact-main-phase-a-20260924
 
 concurrency:
   group: ci-full-${{ github.ref }}
