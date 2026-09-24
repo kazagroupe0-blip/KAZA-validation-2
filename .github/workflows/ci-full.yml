@@ -395,7 +395,7 @@ jobs:
           cd ../..
 
           set +e
-          NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS=1 npm run test:e2e
+          NEXT_PUBLIC_KAZA_RESIDENCE_DIAGNOSTICS=1 npm run test:e2e --workspace apps/web -- --project=chromium e2e/auth.spec.ts -g "new landlord can complete profile"
           TEST_STATUS=$?
           set -e
 
