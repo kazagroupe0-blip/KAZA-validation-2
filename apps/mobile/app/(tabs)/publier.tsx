@@ -108,15 +108,15 @@ export default function PublierScreen() {
         bathrooms,
         photos: uploadedUrls,
         is_published: false,
-      } as any);
+      });
 
       if (error) throw error;
 
       Alert.alert('Succès', 'Votre annonce a été publiée !', [
         { text: 'OK', onPress: () => { setStep(1); router.push('/(tabs)/dashboard'); } },
       ]);
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message ?? 'Impossible de publier.');
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Impossible de publier.');
     } finally {
       setLoading(false);
     }
