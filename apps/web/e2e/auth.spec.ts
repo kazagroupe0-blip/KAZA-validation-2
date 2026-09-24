@@ -40,6 +40,38 @@ test.describe('Auth flow', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/login/);
   });
+
+  test('transient profile API failure does not sign out an active session', async ({ page }) => {
+    const email = process.env.E2E_TENANT_EMAIL ?? 'locataire.demo@kaza.bj';
+    const password = process.env.E2E_TENANT_PW ?? 'KazaDemo2026!';
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByRole('textbox', { name: 'Mot de passe' }).fill(password);
+    await page.getByRole('button', { name: 'Se connecter' }).click();
+    await expect(page).toHaveURL(//explorer/);
+
+    await page.route('**/rest/v1/profiles**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'temporary_profile_failure' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(//dashboard/);
+
+    // Une seconde navigation protège contre le faux positif où le signOut
+    // arriverait seulement après le premier rendu.
+    await page.goto('/profile');
+    await expect(page).toHaveURL(//profile/);
+  });
+
 });
 
 test.describe('Residences', () => {
