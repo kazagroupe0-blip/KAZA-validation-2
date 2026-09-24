@@ -7,10 +7,10 @@ import {
   ActivityIndicator,
   Dimensions,
   Alert,
-  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Image } from 'expo-image';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   MapPin,
   Bed,
@@ -32,7 +32,7 @@ import type { Residence, Review, ReviewsResult } from '@kaza/shared';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const AMENITY_ICONS: Record<string, any> = {
+const AMENITY_ICONS: Record<string, LucideIcon> = {
   Chambres: Bed,
   Douche: ShowerHead,
   Cuisine: UtensilsCrossed,
@@ -43,13 +43,12 @@ const AMENITY_ICONS: Record<string, any> = {
 export default function ResidenceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { user, isPremium } = useAuth();
+  const { user } = useAuth();
   const [residence, setResidence] = useState<Residence | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [numberUnlocked, setNumberUnlocked] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -75,9 +74,6 @@ export default function ResidenceDetailScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    if (isPremium) setNumberUnlocked(true);
-  }, [isPremium]);
 
   const handleToggleFavorite = async () => {
     if (!user || !id) return;
@@ -89,15 +85,21 @@ export default function ResidenceDetailScreen() {
     }
   };
 
-  const handleUnlockNumber = () => {
-    Alert.alert(
-      'Débloquer le numéro',
-      'Achetez un Pass Locataire (1 000 FCFA) pour accéder aux numéros directs des propriétaires pendant 30 jours.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Acheter le Pass', onPress: () => setNumberUnlocked(true) },
-      ],
-    );
+  const handleContactOwner = async () => {
+    if (!user || !id) {
+      router.push('/(auth)/login');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('open_conversation', { p_residence_id: id });
+      if (error) throw error;
+      const conversationId = data as string | null;
+      if (!conversationId) throw new Error('Conversation indisponible.');
+      router.push(`/chat/${conversationId}`);
+    } catch (error) {
+      Alert.alert('Contact impossible', error instanceof Error ? error.message : 'Impossible de contacter le propriétaire.');
+    }
   };
 
   if (loading || !residence) {
@@ -109,10 +111,6 @@ export default function ResidenceDetailScreen() {
   }
 
   const photos = residence.photos ?? [];
-  const ownerPhone = (residence as any).owner_phone as string | undefined;
-  const maskedPhone = ownerPhone
-    ? ownerPhone.replace(/(\+\d{3}\s?\d{2})\s?.*/, '$1 ** ** **')
-    : null;
   const cautionMonths =
     residence.deposit && residence.price_monthly
       ? Math.round(Number(residence.deposit) / Number(residence.price_monthly))
@@ -254,49 +252,22 @@ export default function ResidenceDetailScreen() {
             </View>
           )}
 
-          {/* Contact section - locked */}
-          <View className="mt-6 bg-kaza-amber/5 border border-kaza-amber/20 rounded-2xl p-4">
-            <Text className="text-base font-bold text-slate-900 mb-3">
-              Coordonnées du propriétaire
+          {/* Contact section */}
+          <View className="mt-6 bg-kaza-vert/5 border border-kaza-vert/15 rounded-2xl p-4">
+            <Text className="text-base font-bold text-slate-900 mb-2">
+              Contacter le propriétaire
             </Text>
-            {ownerPhone ? (
-              <>
-                <View className="flex-row items-center mb-3">
-                  <Lock size={16} color="#F59E0B" />
-                  <Text className="text-lg font-bold text-slate-900 ml-2 tracking-wider">
-                    {numberUnlocked ? ownerPhone : maskedPhone}
-                  </Text>
-                </View>
-                {!numberUnlocked && (
-                  <>
-                    <Text className="text-xs text-slate-500 mb-3">
-                      Débloquez l'accès direct aux propriétaires sans commission de démarcheur.
-                    </Text>
-                    <TouchableOpacity
-                      onPress={handleUnlockNumber}
-                      className="bg-kaza-amber h-11 rounded-xl items-center justify-center"
-                      activeOpacity={0.8}
-                    >
-                      <Text className="text-white font-semibold text-sm">
-                        Débloquer le numéro (1 000 FCFA / Pass)
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-                {numberUnlocked && (
-                  <TouchableOpacity
-                    onPress={() => Linking.openURL(`tel:${ownerPhone}`)}
-                    className="bg-kaza-vert h-11 rounded-xl items-center justify-center"
-                  >
-                    <Text className="text-white font-semibold text-sm">Appeler le propriétaire</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            ) : (
-              <Text className="text-xs text-slate-500">
-                Numéro non disponible pour ce bien.
+            <Text className="text-sm text-slate-600 mb-3">
+              Échangez directement avec le propriétaire dans la messagerie KAZA.
+            </Text>
+            <TouchableOpacity
+              onPress={() => void handleContactOwner()}
+              className="bg-kaza-vert h-11 rounded-xl items-center justify-center"
+            >
+              <Text className="text-white font-semibold text-sm">
+                {user ? 'Contacter le propriétaire' : 'Se connecter pour contacter'}
               </Text>
-            )}
+            </TouchableOpacity>
           </View>
 
           {/* Reviews */}
