@@ -224,7 +224,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
             {uploading ? 'Upload…' : <Upload className="h-5 w-5" aria-hidden />}
             <input
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp"
               multiple
               className="sr-only"
               aria-label="Ajouter des photos"
