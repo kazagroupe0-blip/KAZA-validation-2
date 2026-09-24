@@ -92,14 +92,18 @@ describe('Migration regression tests', () => {
         p_function_name: 'open_conversation',
       });
 
-      // If helper not available (local dev), skip this check
+      // Pas de sortie silencieuse : sans le helper CI-only (installé par ci-full.yml),
+
+      // la propriété n'est PAS vérifiée et le test doit échouer, pas passer à vide.
+
       if (error && error.message.includes('Could not find the function')) {
-        console.warn('get_function_source helper not available, skipping source check');
-        return;
+
+        throw new Error('get_function_source helper absent : propriété non vérifiable dans cet environnement');
+
       }
 
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(typeof data).toBe('string');
 
       const source = (data as string).toLowerCase();
       // pg_get_functiondef() conserve la casse du SQL d'origine : on normalise
@@ -142,7 +146,9 @@ describe('Migration regression tests', () => {
       });
 
       expect(error).toBeNull();
-      expect(convId).toBeDefined();
+      // L'identifiant renvoyé doit désigner une conversation réellement créée.
+      const { data: conv } = await supabaseAdmin.from('conversations').select('tenant_id, residence_id').eq('id', convId).single();
+      expect(conv).toMatchObject({ tenant_id: tenant.user.id, residence_id: residence });
     });
   });
 
@@ -152,10 +158,14 @@ describe('Migration regression tests', () => {
         p_function_name: 'is_admin',
       });
 
-      // If helper not available, skip
+      // Pas de sortie silencieuse : sans le helper CI-only (installé par ci-full.yml),
+
+      // la propriété n'est PAS vérifiée et le test doit échouer, pas passer à vide.
+
       if (error && error.message.includes('Could not find the function')) {
-        console.warn('get_function_source helper not available, skipping source check');
-        return;
+
+        throw new Error('get_function_source helper absent : propriété non vérifiable dans cet environnement');
+
       }
 
       expect(error).toBeNull();
@@ -188,10 +198,14 @@ describe('Migration regression tests', () => {
         p_function_name: 'handle_new_user',
       });
 
-      // If helper not available, skip
+      // Pas de sortie silencieuse : sans le helper CI-only (installé par ci-full.yml),
+
+      // la propriété n'est PAS vérifiée et le test doit échouer, pas passer à vide.
+
       if (error && error.message.includes('Could not find the function')) {
-        console.warn('get_function_source helper not available, skipping source check');
-        return;
+
+        throw new Error('get_function_source helper absent : propriété non vérifiable dans cet environnement');
+
       }
 
       expect(error).toBeNull();

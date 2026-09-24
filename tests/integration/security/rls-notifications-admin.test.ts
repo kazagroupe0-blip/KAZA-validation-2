@@ -76,11 +76,26 @@ describe('RLS: notifications & admin tables', () => {
 
   describe('notifications SELECT', () => {
     it('user CAN see own notifications', async () => {
-      // Trigger a notification by creating a lease
-      await createLease(landlordA, tenantA);
-      const { data, error } = await getClient(tenantA).from('notifications').select('*').limit(1);
+      // create_lease insère une notification déterministe pour le locataire
+      // (type 'lease', data.lease_id = bail créé).
+      const { leaseId } = await createLease(landlordA, tenantA);
+      // Prérequis, vérifié côté admin : la notification existe bel et bien. Sans elle,
+      // le test échoue ici au lieu de passer à vide (ancien `length >= 0`).
+      const { data: seeded } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', tenantA.user.id)
+        .eq('type', 'lease')
+        .contains('data', { lease_id: leaseId });
+      expect(seeded).toHaveLength(1);
+      // Propriété testée, avec le client réel du locataire : il lit SA notification.
+      const { data, error } = await getClient(tenantA)
+        .from('notifications')
+        .select('id, user_id')
+        .eq('id', seeded![0].id);
       expect(error).toBeNull();
-      expect(data?.length).toBeGreaterThanOrEqual(0);
+      expect(data).toHaveLength(1);
+      expect(data![0].user_id).toBe(tenantA.user.id);
     });
 
     it('user CANNOT see other user notifications', async () => {
@@ -106,15 +121,23 @@ describe('RLS: notifications & admin tables', () => {
 
   describe('notifications UPDATE (mark read)', () => {
     it('user CAN mark own notification as read', async () => {
-      await createLease(landlordA, tenantA);
-      const { data: notifs } = await getClient(tenantA).from('notifications').select('id').limit(1);
-      if (notifs && notifs.length > 0) {
-        const { error } = await getClient(tenantA)
-          .from('notifications')
-          .update({ read_at: new Date().toISOString() })
-          .eq('id', notifs[0].id);
-        expect(error).toBeNull();
-      }
+      // Seed déterministe côté admin : une notification non lue appartenant à tenantA.
+      const { data: seeded, error: seedError } = await supabaseAdmin.from('notifications').insert({
+        user_id: tenantA.user.id, type: 'system', title: 'seed', body: 'seed',
+      }).select('id, read_at');
+      expect(seedError).toBeNull();
+      expect(seeded).toHaveLength(1);
+      expect(seeded![0].read_at).toBeNull();
+      // Action testée, avec le client réel du propriétaire de la notification.
+      const { error } = await getClient(tenantA)
+        .from('notifications')
+        .update({ read_at: new Date().toISOString() })
+        .eq('id', seeded![0].id);
+      expect(error).toBeNull();
+      // Un UPDATE filtré par RLS renverrait 0 ligne SANS erreur : seul l'état relu
+      // côté admin prouve que read_at a réellement été renseigné.
+      const { data: after } = await supabaseAdmin.from('notifications').select('read_at').eq('id', seeded![0].id).single();
+      expect(after?.read_at).not.toBeNull();
     });
 
     it('user CANNOT mark other user notification as read', async () => {
@@ -162,7 +185,9 @@ describe('RLS: notifications & admin tables', () => {
     it('admin CAN call admin_stats', async () => {
       const { data, error } = await getClient(adminUser).rpc('admin_stats');
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      // `toBeDefined` était toujours vrai (null est défini). Les 3 profils de test existent.
+      expect(typeof data?.users?.total).toBe('number');
+      expect(data.users.total).toBeGreaterThanOrEqual(3);
     });
 
     it('tenant CANNOT call admin_stats', async () => {

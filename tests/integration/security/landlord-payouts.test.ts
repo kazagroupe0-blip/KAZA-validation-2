@@ -195,10 +195,13 @@ describe('Landlord payouts', () => {
       .eq('id', payment.id);
     expect(updateError).toBeNull();
 
-    const { data: payouts } = await landlordClient
+    // Propriété d'état (aucun payout créé) : lue côté admin. Lue par le client bailleur,
+    // `[]` serait aussi le résultat d'un RLS qui cache la ligne.
+    const { data: payouts, error: readError } = await supabaseAdmin
       .from('landlord_payouts')
       .select('id')
       .eq('payment_id', payment.id);
+    expect(readError).toBeNull();
     expect(payouts).toEqual([]);
   });
 
@@ -432,6 +435,12 @@ describe('Landlord payouts', () => {
       .update({ status: 'confirmed', confirmed_at: new Date().toISOString() })
       .eq('id', paymentId);
     expect(error).toBeNull();
+    // Prérequis : le payout existe. Sinon `[]` côté anon ne prouverait rien.
+    const { data: existing } = await supabaseAdmin
+      .from('landlord_payouts')
+      .select('id')
+      .eq('payment_id', paymentId);
+    expect(existing).toHaveLength(1);
 
     const { data, error: readError } = await supabaseAnon
       .from('landlord_payouts')

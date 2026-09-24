@@ -64,21 +64,20 @@ describe('RLS: profiles table', () => {
       const profileId = await getProfileId(clientA);
       const { data, error } = await clientA.from('profiles').select('*').eq('id', profileId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
       expect(data!.id).toBe(profileId);
     });
 
     it('user A CANNOT read user B profile', async () => {
       const profileIdB = await getProfileId(clientB);
       const { data, error } = await clientA.from('profiles').select('*').eq('id', profileIdB).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
     it('anon CANNOT read any profile', async () => {
       const profileIdA = await getProfileId(clientA);
       const { data, error } = await supabaseAnon.from('profiles').select('*').eq('id', profileIdA).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -86,7 +85,6 @@ describe('RLS: profiles table', () => {
       const profileIdB = await getProfileId(clientB);
       const { data, error } = await clientAdmin.from('profiles').select('*').eq('id', profileIdB).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
       expect(data!.id).toBe(profileIdB);
     });
 
@@ -104,7 +102,6 @@ describe('RLS: profiles table', () => {
     it('admin CAN list all profiles', async () => {
       const { data, error } = await clientAdmin.from('profiles').select('*');
       expect(error).toBeNull();
-      expect(data).toBeDefined();
       expect(Array.isArray(data)).toBe(true);
       expect(data!.length).toBeGreaterThanOrEqual(3);
     });

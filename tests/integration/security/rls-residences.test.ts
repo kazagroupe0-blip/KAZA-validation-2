@@ -95,7 +95,7 @@ describe('RLS: residences table', () => {
       const residenceId = await createResidenceDirect(landlordA.user.id, { is_published: false });
       const clientTenant = getClient(tenantA);
       const { data, error } = await clientTenant.from('residences').select('*').eq('id', residenceId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -103,7 +103,7 @@ describe('RLS: residences table', () => {
       const residenceId = await createResidenceDirect(landlordA.user.id, { is_published: true, is_verified: false });
       const clientTenant = getClient(tenantA);
       const { data, error } = await clientTenant.from('residences').select('*').eq('id', residenceId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -139,14 +139,14 @@ describe('RLS: residences table', () => {
       const clientLandlord = getClient(landlordA);
       const { data, error } = await clientLandlord.from('residences').select('*').eq('id', residenceId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(residenceId);
     });
 
     it('landlord CANNOT see other landlord draft', async () => {
       const residenceId = await createResidenceDirect(landlordB.user.id, { is_published: false });
       const clientLandlordA = getClient(landlordA);
       const { data, error } = await clientLandlordA.from('residences').select('*').eq('id', residenceId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -155,7 +155,7 @@ describe('RLS: residences table', () => {
       const clientAdmin = getClient(adminUser);
       const { data, error } = await clientAdmin.from('residences').select('*').eq('id', residenceId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(residenceId);
     });
   });
 
@@ -349,7 +349,7 @@ describe('RLS: residences table', () => {
         .single();
 
       expect(publicRead.data).toBeNull();
-      expect(publicRead.error).toBeDefined();
+      expect(publicRead.error).not.toBeNull();
     });
 
     it('admin approval publishes and makes the residence publicly visible', async () => {

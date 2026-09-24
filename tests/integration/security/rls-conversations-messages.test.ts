@@ -83,34 +83,34 @@ describe('RLS: conversations & messages tables', () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       const { data, error } = await getClient(tenantA).from('conversations').select('*').eq('id', convId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(convId);
     });
 
     it('landlord CAN see conversation they participate in', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       const { data, error } = await getClient(landlordA).from('conversations').select('*').eq('id', convId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(convId);
     });
 
     it('tenant B CANNOT see conversation between tenant A and landlord', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       const { data, error } = await getClient(tenantB).from('conversations').select('*').eq('id', convId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
     it('landlord B CANNOT see conversation between tenant A and landlord A', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       const { data, error } = await getClient(landlordB).from('conversations').select('*').eq('id', convId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
     it('anon CANNOT see any conversation', async () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       const { data, error } = await supabaseAnon.from('conversations').select('*').eq('id', convId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -118,7 +118,7 @@ describe('RLS: conversations & messages tables', () => {
       const { convId } = await setupConversation(landlordA, tenantA);
       const { data, error } = await getClient(adminUser).from('conversations').select('*').eq('id', convId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(convId);
     });
   });
 
@@ -167,7 +167,9 @@ describe('RLS: conversations & messages tables', () => {
       const residenceId = await createPublishedVerifiedResidence(landlordA);
       const { data: convId, error } = await getClient(tenantA).rpc('open_conversation', { p_residence_id: residenceId });
       expect(error).toBeNull();
-      expect(convId).toBeDefined();
+      // L'identifiant renvoyé doit désigner une conversation réellement créée.
+      const { data: conv } = await supabaseAdmin.from('conversations').select('tenant_id, residence_id').eq('id', convId).single();
+      expect(conv).toMatchObject({ tenant_id: tenantA.user.id, residence_id: residenceId });
     });
 
     it('tenant CANNOT directly insert into conversations table', async () => {

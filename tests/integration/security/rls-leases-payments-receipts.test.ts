@@ -123,34 +123,34 @@ describe('RLS: leases, payments, receipts tables', () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const { data, error } = await getClient(tenantA).from('leases').select('*').eq('id', leaseId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(leaseId);
     });
 
     it('landlord CAN see lease for their property', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const { data, error } = await getClient(landlordA).from('leases').select('*').eq('id', leaseId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(leaseId);
     });
 
     it('tenant B CANNOT see tenant A lease', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const { data, error } = await getClient(tenantB).from('leases').select('*').eq('id', leaseId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
     it('landlord B CANNOT see lease for landlord A property', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const { data, error } = await getClient(landlordB).from('leases').select('*').eq('id', leaseId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
     it('anon CANNOT see any lease', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const { data, error } = await supabaseAnon.from('leases').select('*').eq('id', leaseId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -158,14 +158,16 @@ describe('RLS: leases, payments, receipts tables', () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const { data, error } = await getClient(adminUser).from('leases').select('*').eq('id', leaseId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(leaseId);
     });
   });
 
   describe('leases INSERT', () => {
     it('landlord CAN create lease via RPC', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      expect(leaseId).toBeDefined();
+      // L'identifiant renvoyé doit désigner un bail actif réellement créé.
+      const { data: lease } = await supabaseAdmin.from('leases').select('status, tenant_id, landlord_id').eq('id', leaseId).single();
+      expect(lease).toMatchObject({ status: 'active', tenant_id: tenantA.user.id, landlord_id: landlordA.user.id });
     });
 
     it('tenant CANNOT create lease', async () => {
@@ -190,7 +192,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(tenantA).from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(paymentId);
     });
 
     it('landlord CAN see payment for their property', async () => {
@@ -200,7 +202,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(landlordA).from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.id).toBe(paymentId);
     });
 
     it('tenant B CANNOT see tenant A payment', async () => {
@@ -209,7 +211,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(tenantB).from('payments').select('*').eq('id', paymentId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -219,7 +221,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(landlordB).from('payments').select('*').eq('id', paymentId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -229,7 +231,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await supabaseAnon.from('payments').select('*').eq('id', paymentId).single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
   });
@@ -240,7 +242,8 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = new Date().toISOString().split('T')[0];
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      expect(paymentId).toBeDefined();
+      const { data: payment } = await supabaseAdmin.from('payments').select('status, tenant_id').eq('id', paymentId).single();
+      expect(payment).toMatchObject({ status: 'pending', tenant_id: tenantA.user.id });
     });
 
     it('tenant CANNOT report payment for other tenant lease', async () => {
@@ -379,7 +382,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       expect(receipts?.length).toBe(1);
       const { data, error } = await getClient(tenantA).from('receipts').select('*').eq('id', receipts![0].id).single();
       expect(error).toBeNull();
-      expect(data).toBeDefined();
+      expect(data?.payment_id).toBe(paymentId);
     });
 
     it('tenant B CANNOT see tenant A receipt', async () => {
@@ -403,7 +406,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       expect(receipts?.length).toBe(1);
       const { data, error } = await getClient(tenantB).from('receipts').select('*').eq('id', receipts![0].id).single();
       // SELECT filtré par RLS : le guard fort est data=null (une fuite ferait échouer cette assertion).
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
   });

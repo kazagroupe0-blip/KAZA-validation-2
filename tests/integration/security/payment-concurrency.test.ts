@@ -120,7 +120,8 @@ describe('Payment concurrency & idempotence', () => {
 
       // First call - should succeed
       const paymentId1 = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      expect(paymentId1).toBeDefined();
+      const { data: first } = await supabaseAdmin.from('payments').select('status').eq('id', paymentId1).single();
+      expect(first?.status).toBe('pending');
 
       // Second call with identical parameters - should be rejected by validate_cash_payment_amount trigger
       // (duplicate period for same lease is prevented by unique constraint or trigger)
@@ -156,13 +157,14 @@ describe('Payment concurrency & idempotence', () => {
 
       const results = await Promise.allSettled(promises);
 
-      // At most one should succeed (others rejected by trigger/constraint)
+      // Exactement un appel réussit (les autres sont rejetés par l'index unique
+      // payments_one_active_per_period). `<= 1` passait aussi avec zéro succès.
       const successful = results.filter(r => r.status === 'fulfilled' && !r.value?.error);
-      expect(successful.length).toBeLessThanOrEqual(1);
+      expect(successful.length).toBe(1);
 
       // Verify only one payment exists
       const { data: payments } = await supabaseAdmin.from('payments').select('id').eq('lease_id', leaseId);
-      expect(payments?.length).toBeLessThanOrEqual(1);
+      expect(payments).toHaveLength(1);
     });
   });
 
