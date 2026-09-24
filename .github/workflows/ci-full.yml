@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - validation/main-mirror-phase-a-20260924
+      - validation/phase-c-dead-code-20260924
 
 concurrency:
-  group: ci-full-${{ github.ref }}
+  group: ci-full-phase-c-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
