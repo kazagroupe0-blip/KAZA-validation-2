@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
-import { supabaseAdmin } from './helpers/supabase-test-client';
+import { supabaseAdmin } from '../helpers/supabase-test-client';
 
 const storageAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
