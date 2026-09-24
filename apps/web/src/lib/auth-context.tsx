@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from './supabase-client';
 import type { Profile, Role } from './types';
 import { getMyProfile } from './supabase-api';
+import { logger } from './logger';
 
 export interface AuthState {
   loading: boolean;
@@ -24,20 +25,39 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
   const router = useRouter();
 
   const refresh = useCallback(async () => {
-    // getUser() valide le JWT côté serveur (plus sûr que getSession, autorisé localement)
-    const { data: { user } } = await supabase.auth.getUser();
+    // getUser() valide le JWT côté serveur (plus sûr que getSession, autorisé localement).
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError) {
+      // Une panne réseau/auth temporaire ne doit pas transformer une session
+      // potentiellement valide en déconnexion artificielle.
+      logger.warn('auth_user_refresh_failed', {
+        message: authError.message,
+      });
+      setLoading(false);
+      return;
+    }
+
     if (!user) {
       setProfile(null);
       setLoading(false);
       return;
     }
+
     try {
-      // note : le profil (rôle) vient de la table profiles — source de vérité unique
+      // note : le profil (rôle) vient de la table profiles — source de vérité unique.
       const me = await getMyProfile();
       setProfile(me);
-    } catch {
-      await supabase.auth.signOut();
-      setProfile(null);
+    } catch (error) {
+      // Une panne ponctuelle de profiles doit rester observable sans invalider
+      // la session Supabase. Le profil actuellement connu est conservé.
+      logger.warn('auth_profile_refresh_failed', {
+        userId: user.id,
+        message: error instanceof Error ? error.message : 'Profil indisponible',
+      });
     } finally {
       setLoading(false);
     }
