@@ -54,8 +54,8 @@ export default function RegisterScreen() {
       if (role === 'bailleur') {
         router.replace('/(auth)/onboarding');
       }
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message ?? 'Inscription échouée.');
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Une erreur est survenue.' ?? 'Inscription échouée.');
     } finally {
       setLoading(false);
     }
