@@ -262,9 +262,8 @@ export async function signInRealUser(env: RealtimeEnv, email: string, password: 
 }
 
 /**
- * dedicated : réplique `supabaseRealtime` (client sans session, `setAuth` non
- * attendu, comme ChatWindow). session : client authentifié par la session
- * elle-même (chemin standard supabase-js).
+ * dedicated : sonde avec un client Realtime sans session persistée et JWT injecté
+ * explicitement avant le join. session : client authentifié par la session elle-même.
  */
 export type ProbeMode = 'dedicated' | 'session';
 
