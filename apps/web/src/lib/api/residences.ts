@@ -152,6 +152,12 @@ export async function updateResidence(
         lat = geo.lat;
         lng = geo.lng;
         geom = `SRID=4326;POINT(${geo.lng} ${geo.lat})`;
+      } else {
+        // note : ne jamais conserver des coordonnées correspondant à l'ancien emplacement.
+        // Une absence de géocodage reste cohérente avec la nouvelle ville/quartier.
+        lat = null;
+        lng = null;
+        geom = null;
       }
     }
   }
