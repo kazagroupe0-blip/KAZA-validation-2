@@ -10,6 +10,8 @@ import {
   FlatList,
 } from 'react-native';
 import { Stack } from 'expo-router';
+import type { LucideIcon } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   Users,
   Home,
@@ -24,6 +26,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { formatFCFA } from '@kaza/shared';
+import type { Profile, Residence } from '@kaza/shared';
 
 interface AdminStats {
   total_users: number;
@@ -33,13 +36,16 @@ interface AdminStats {
   pending_verifications: number;
 }
 
+type PendingResidence = Pick<Residence, 'id' | 'title' | 'city' | 'status' | 'owner_id' | 'is_published' | 'is_verified' | 'created_at'>;
+type AdminUser = Pick<Profile, 'id' | 'full_name' | 'email' | 'phone' | 'role' | 'is_premium' | 'is_verified_landlord' | 'created_at'>;
+
 export default function AdminScreen() {
   const { role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [pendingResidences, setPendingResidences] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [pendingResidences, setPendingResidences] = useState<PendingResidence[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [tab, setTab] = useState<'overview' | 'residences' | 'users'>('overview');
 
   const load = useCallback(async () => {
@@ -69,8 +75,8 @@ export default function AdminScreen() {
       const { error } = await supabase.rpc('admin_verify_residence', { p_residence_id: residenceId });
       if (error) throw error;
       load();
-    } catch (err: any) {
-      Alert.alert('Erreur', err.message);
+    } catch (err: unknown) {
+      Alert.alert('Erreur', err instanceof Error ? err.message : 'Une erreur est survenue.');
     }
   };
 
@@ -79,7 +85,7 @@ export default function AdminScreen() {
       const { error } = await supabase.rpc('admin_unpublish_residence', { p_residence_id: residenceId });
       if (error) throw error;
       load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Erreur', err.message);
     }
   };
@@ -89,7 +95,7 @@ export default function AdminScreen() {
       const { error } = await supabase.rpc('admin_set_premium', { p_user_id: userId, p_is_premium: true });
       if (error) throw error;
       load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Erreur', err.message);
     }
   };
@@ -99,7 +105,7 @@ export default function AdminScreen() {
       const { error } = await supabase.rpc('admin_set_landlord_verified', { p_user_id: userId, p_verified: true });
       if (error) throw error;
       load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Erreur', err.message);
     }
   };
@@ -254,7 +260,7 @@ export default function AdminScreen() {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
+function KpiCard({ icon: Icon, label, value, color }: { icon: LucideIcon; label: string; value: string; color: string }) {
   return (
     <View className="flex-1 bg-white rounded-xl p-4 border border-slate-100">
       <Icon size={18} color={color} />
