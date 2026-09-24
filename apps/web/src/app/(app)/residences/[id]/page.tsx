@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import { logger } from '@/lib/logger';
 
 export default function ResidenceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,7 +32,14 @@ export default function ResidenceDetailPage() {
     getResidence(id)
       .then((r) => {
         mounted && setResidence(r);
-        if (user) void incrementResidenceViews(id);
+        if (user) {
+          void incrementResidenceViews(id).catch((error) => {
+            logger.warn('residence_view_increment_failed', {
+              userId: user.id,
+              message: error instanceof Error ? error.message : 'Mise à jour du compteur de vues impossible',
+            });
+          });
+        }
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) router.replace('/explorer');
