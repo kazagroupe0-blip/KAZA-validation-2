@@ -117,7 +117,7 @@ describe('Landlord profile completion', () => {
       .select('onboarding_completed')
       .maybeSingle();
 
-    expect(error).toBeDefined();
+    expect(error).not.toBeNull();
     expect(data).toBeNull();
 
     const profile = await getProfile();
@@ -142,7 +142,7 @@ describe('Landlord profile completion', () => {
         p_bank_name: null,
         p_bank_iban: null,
       });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
 
       const { data: profile } = await supabaseAdmin
         .from('profiles')

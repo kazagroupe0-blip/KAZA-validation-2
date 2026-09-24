@@ -128,8 +128,8 @@ describe('Payment concurrency & idempotence', () => {
         p_period_end: periodEnd,
       });
 
-      // Should be rejected (duplicate period for same lease)
-      expect(error2).toBeDefined();
+      // Rejeté par l'index unique payments_one_active_per_period (violation de contrainte).
+      expect(error2).not.toBeNull();
 
       // Verify only one payment exists
       const { data: payments } = await getClient(tenantA).from('payments').select('*').eq('lease_id', leaseId);
@@ -224,24 +224,19 @@ describe('Payment concurrency & idempotence', () => {
         .from('payments')
         .update({ status: 'rejected' })
         .eq('id', paymentId);
-      expect(error).toBeDefined();
+      // payments_before_update_guard lève « paiement confirmé est immuable ».
+      expect(error).not.toBeNull();
+      const { data: after } = await supabaseAdmin.from('payments').select('status').eq('id', paymentId).single();
+      expect(after?.status).toBe('confirmed');
     });
   });
 
   describe('Webhook replay protection', () => {
-    it('simulated duplicate webhook for same transaction does not double-process', async () => {
-      // This test would require mocking the FedaPay webhook
-      // For now, we verify the webhook handler has idempotency keys
-      const { data: payment } = await getClient(tenantA).from('payments').select('*').limit(1);
-      if (payment && payment.length > 0) {
-        const p = payment[0];
-        if (p.provider_ref) {
-          // Simulate webhook with same provider_ref
-          // Note: process_fedapay_webhook RPC was removed, webhook is handled by Edge Function
-          // This test is informational - real webhook idempotency is in the Edge Function
-          expect(p.provider_ref).toBeDefined();
-        }
-      }
-    });
+    // L'idempotence anti-rejeu du webhook FedaPay vit dans l'Edge Function fedapay-webhook
+    // (mise à jour atomique conditionnée à status='pending') et n'est pas atteignable depuis
+    // la couche d'intégration REST. L'ancien test était vacant (assertion toujours vraie dans
+    // un bloc `if` rarement exécuté). L'idempotence DB réellement testable (un seul paiement
+    // actif par lease+période) est déjà couverte par « Cash payment idempotence » ci-dessus.
+    it.skip('webhook replay idempotency is enforced in the Edge Function (out of integration scope)', () => {});
   });
 });

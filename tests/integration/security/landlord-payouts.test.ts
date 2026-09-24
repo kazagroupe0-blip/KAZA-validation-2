@@ -246,11 +246,11 @@ describe('Landlord payouts', () => {
       })
       .select('id')
       .maybeSingle();
-    expect(insertError).toBeDefined();
+    expect(insertError).not.toBeNull();
     expect(inserted).toBeNull();
 
     const { error: claimError } = await landlordClient.rpc('claim_landlord_payouts', { p_limit: 1 });
-    expect(claimError).toBeDefined();
+    expect(claimError).not.toBeNull();
 
     const { data: claimed, error: adminClaimError } = await supabaseAdmin.rpc('claim_landlord_payouts', { p_limit: 1 });
     expect(adminClaimError).toBeNull();
@@ -409,7 +409,7 @@ describe('Landlord payouts', () => {
     const { error: landlordRetryError } = await landlordClient.rpc('admin_retry_landlord_payout', {
       p_payout_id: payout?.id,
     });
-    expect(landlordRetryError).toBeDefined();
+    expect(landlordRetryError).not.toBeNull();
 
     const { error: adminRetryError } = await supabaseAdmin.rpc('admin_retry_landlord_payout', {
       p_payout_id: payout?.id,

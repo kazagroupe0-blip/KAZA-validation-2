@@ -116,7 +116,7 @@ describe('RLS: residences table', () => {
       const { data, error } = await getClient(tenantA).rpc('get_residence', {
         p_residence_id: residenceId,
       });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -130,7 +130,7 @@ describe('RLS: residences table', () => {
       const { data, error } = await getClient(tenantA).rpc('get_residence', {
         p_residence_id: residenceId,
       });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -179,24 +179,38 @@ describe('RLS: residences table', () => {
 
     it('tenant CANNOT create residence', async () => {
       const clientTenant = getClient(tenantA);
+      // owner_id renseigné (= self) pour que WITH CHECK (auth.uid()=owner_id) passe : on teste
+      // ainsi la règle de rôle, pas la contrainte NOT NULL. L'ancien test omettait owner_id et
+      // passait « vert » à cause d'une violation NOT NULL, jamais à cause de la RLS.
       const { data, error } = await clientTenant.from('residences').insert({
+        owner_id: tenantA.user.id,
         title: 'Hack Attempt',
         type: 'appartement',
         price_monthly: 50000,
         city: 'Cotonou',
       }).select('id').single();
-      expect(error).toBeDefined();
-      expect(data).toBeNull();
+      // ÉCART CONNU (observation, hors correctif 1a) : enforce_freemium_limit ne bloque que le
+      // rôle 'visiteur', donc un 'locataire' peut actuellement insérer une résidence (brouillon).
+      // Ce test exprime l'invariant produit visé (seuls les bailleurs créent des biens) et est
+      // donc attendu ROUGE tant que l'enforcement de rôle n'est pas resserré.
+      expect(error).not.toBeNull();
+      const { count } = await supabaseAdmin
+        .from('residences')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_id', tenantA.user.id);
+      expect(count).toBe(0);
     });
 
     it('anon CANNOT create residence', async () => {
       const { data, error } = await supabaseAnon.from('residences').insert({
+        owner_id: landlordA.user.id,
         title: 'Hack Attempt',
         type: 'appartement',
         price_monthly: 50000,
         city: 'Cotonou',
       }).select('id').single();
-      expect(error).toBeDefined();
+      // owner_id renseigné pour éprouver la RLS (auth.uid() null ⇒ WITH CHECK faux), pas NOT NULL.
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
   });
@@ -278,7 +292,9 @@ describe('RLS: residences table', () => {
         p_action: 'approve',
       });
 
-      expect(result.error).toBeDefined();
+      // admin_moderate_residence (SECURITY DEFINER) lève pour un non-admin ;
+      // error===null passerait le faux-vert `toBeDefined`.
+      expect(result.error).not.toBeNull();
 
       const { data } = await landlord
         .from('residences')
@@ -477,8 +493,13 @@ describe('RLS: residences table', () => {
         .eq('id', residenceId)
         .select('title')
         .single();
-      expect(error).toBeDefined();
+      // USING owner_id = auth.uid() exclut la ligne ; .single() sur 0 ligne
+      // renvoie une vraie erreur (PGRST116). null serait « défini ».
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
+      // Invariant d'état : le titre de la résidence de landlordB n'a pas changé.
+      const { data: after } = await supabaseAdmin.from('residences').select('title').eq('id', residenceId).single();
+      expect(after?.title).not.toBe('Hacked');
     });
 
     it('tenant CANNOT update any residence', async () => {
@@ -490,8 +511,12 @@ describe('RLS: residences table', () => {
         .eq('id', residenceId)
         .select('title')
         .single();
-      expect(error).toBeDefined();
+      // Le locataire n'est pas propriétaire : USING exclut la ligne, .single()
+      // sur 0 ligne lève une vraie erreur.
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
+      const { data: after } = await supabaseAdmin.from('residences').select('title').eq('id', residenceId).single();
+      expect(after?.title).not.toBe('Hacked');
     });
 
     it('landlord CANNOT self-verify (is_verified is admin-only)', async () => {
@@ -533,19 +558,47 @@ describe('RLS: residences table', () => {
       expect(error).toBeNull();
     });
 
-    it('landlord CANNOT delete published residence (status occupied check)', async () => {
-      const residenceId = await createResidenceDirect(landlordA.user.id, { is_published: true, is_verified: true });
+    it('landlord CANNOT delete an occupied residence (active lease)', async () => {
+      // F-21 (ROUGE ATTENDU en l'état) : aucun garde-fou BEFORE DELETE sur
+      // residences et la policy residences_delete_owner autorise tout propriétaire
+      // à supprimer sa propre résidence. Le FK leases.residence_id ON DELETE CASCADE
+      // fait alors disparaître le bail (et ses paiements/quittances) en silence.
+      // Invariant métier : une résidence occupée par un bail actif ne doit PAS
+      // pouvoir être supprimée par le bailleur.
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: true, is_verified: true, status: 'occupee',
+      });
+      const { data: lease, error: leaseErr } = await supabaseAdmin.from('leases').insert({
+        residence_id: residenceId,
+        tenant_id: tenantA.user.id,
+        landlord_id: landlordA.user.id,
+        monthly_rent: 100000,
+        deposit: 200000,
+        start_date: new Date().toISOString().split('T')[0],
+        date_fn_couverture: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        status: 'active',
+      }).select('id').single();
+      expect(leaseErr).toBeNull();
+
       const clientLandlord = getClient(landlordA);
-      const { error } = await clientLandlord.from('residences').delete().eq('id', residenceId);
-      // May succeed if not occupied, but should fail if occupied
-      // This tests the trigger logic
+      await clientLandlord.from('residences').delete().eq('id', residenceId);
+
+      // La résidence occupée doit persister, et le bail actif avec elle.
+      const { data: stillRes } = await supabaseAdmin.from('residences').select('id').eq('id', residenceId).maybeSingle();
+      expect(stillRes?.id).toBe(residenceId);
+      const { data: stillLease } = await supabaseAdmin.from('leases').select('id').eq('id', lease!.id).maybeSingle();
+      expect(stillLease?.id).toBe(lease!.id);
     });
 
     it('tenant CANNOT delete any residence', async () => {
       const residenceId = await createResidenceDirect(landlordA.user.id);
       const clientTenant = getClient(tenantA);
-      const { error } = await clientTenant.from('residences').delete().eq('id', residenceId);
-      expect(error).toBeDefined();
+      // residences_delete_owner USING owner_id = auth.uid() : le locataire n'est
+      // pas propriétaire, le DELETE ne matche aucune ligne et NE renvoie PAS
+      // d'erreur (faux-vert de l'ancien `toBeDefined`). Invariant : la résidence persiste.
+      await clientTenant.from('residences').delete().eq('id', residenceId);
+      const { data: still } = await supabaseAdmin.from('residences').select('id').eq('id', residenceId).maybeSingle();
+      expect(still?.id).toBe(residenceId);
     });
   });
 });

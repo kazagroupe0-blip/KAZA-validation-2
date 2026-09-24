@@ -131,8 +131,12 @@ describe('RLS: profiles table', () => {
         .eq('id', profileIdB)
         .select('full_name')
         .single();
-      expect(error).toBeDefined();
+      // .single() sur 0 ligne (USING exclut) renvoie une erreur réelle ; null serait « défini ».
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
+      // Invariant d'état : le profil B n'a pas changé.
+      const { data: b } = await supabaseAdmin.from('profiles').select('full_name').eq('id', profileIdB).single();
+      expect(b?.full_name).not.toBe('Hacked Name');
     });
 
     it('user A CANNOT escalate role to admin', async () => {
@@ -143,8 +147,11 @@ describe('RLS: profiles table', () => {
         .eq('id', profileId)
         .select('role')
         .single();
-      expect(error).toBeDefined();
+      // Le trigger profiles_guard_sensitive lève ; l'update ne passe pas.
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
+      const { data: a } = await supabaseAdmin.from('profiles').select('role').eq('id', profileId).single();
+      expect(a?.role).not.toBe('admin');
     });
 
     it('user A CANNOT escalate role to bailleur without consent', async () => {
@@ -156,7 +163,8 @@ describe('RLS: profiles table', () => {
         .select('role')
         .single();
       // Should be blocked by trigger profiles_guard_sensitive
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
+      void data;
     });
 
     it('user A CANNOT remove consent_apdp', async () => {
@@ -167,7 +175,7 @@ describe('RLS: profiles table', () => {
         .eq('id', profileId)
         .select('consent_apdp')
         .single();
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
 
@@ -206,7 +214,8 @@ describe('RLS: profiles table', () => {
         role: 'admin',
         consent_apdp: true,
       });
-      expect(error).toBeDefined();
+      // WITH CHECK (auth.uid() = id) : l'INSERT direct anon est refusé.
+      expect(error).not.toBeNull();
       expect(data).toBeNull();
     });
   });
@@ -214,16 +223,18 @@ describe('RLS: profiles table', () => {
   describe('DELETE policies', () => {
     it('user CANNOT delete own profile', async () => {
       const profileId = await getProfileId(clientA);
-      const { data, error } = await clientA.from('profiles').delete().eq('id', profileId);
-      expect(error).toBeDefined();
-      expect(data).toBeNull();
+      // Aucune policy DELETE sur profiles : le DELETE ne matche aucune ligne et NE renvoie PAS
+      // d'erreur (data null quoi qu'il arrive). L'invariant vérifiable est que le profil persiste.
+      await clientA.from('profiles').delete().eq('id', profileId);
+      const { data: still } = await supabaseAdmin.from('profiles').select('id').eq('id', profileId).maybeSingle();
+      expect(still?.id).toBe(profileId);
     });
 
     it('admin CANNOT delete profiles via RLS (use RPC instead)', async () => {
       const profileId = await getProfileId(clientA);
-      const { data, error } = await clientAdmin.from('profiles').delete().eq('id', profileId);
-      expect(error).toBeDefined();
-      expect(data).toBeNull();
+      await clientAdmin.from('profiles').delete().eq('id', profileId);
+      const { data: still } = await supabaseAdmin.from('profiles').select('id').eq('id', profileId).maybeSingle();
+      expect(still?.id).toBe(profileId);
     });
   });
 });

@@ -119,7 +119,7 @@ describe('Migration regression tests', () => {
         p_residence_id: residence,
       });
 
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(error?.message).toContain('Bien introuvable');
     });
 
@@ -130,7 +130,7 @@ describe('Migration regression tests', () => {
         p_residence_id: residence,
       });
 
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
       expect(error?.message).toContain('Bien introuvable');
     });
 
@@ -168,7 +168,7 @@ describe('Migration regression tests', () => {
   describe('set_my_role() function integrity', () => {
     it('function rejects admin role', async () => {
       const { error } = await tenantClient.rpc('set_my_role', { p_role: 'admin' });
-      expect(error).toBeDefined();
+      expect(error).not.toBeNull();
     });
 
     it('function accepts locataire', async () => {
