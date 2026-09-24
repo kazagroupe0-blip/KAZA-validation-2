@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Heart, Search, Home } from 'lucide-react-native';
@@ -21,15 +22,17 @@ export default function FavorisScreen() {
   const [favorites, setFavorites] = useState<Residence[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
+    setLoadError(null);
     try {
       const { data, error } = await supabase.rpc('list_my_favorites');
       if (error) throw error;
       setFavorites((data ?? []) as unknown as Residence[]);
-    } catch {
-      setFavorites([]);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Impossible de charger vos favoris.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -39,8 +42,15 @@ export default function FavorisScreen() {
   useEffect(() => { load(); }, [load]);
 
   const removeFavorite = async (id: string) => {
+    const previous = favorites;
     setFavorites((prev) => prev.filter((f) => f.id !== id));
-    await supabase.rpc('toggle_favorite', { p_residence_id: id });
+    try {
+      const { error } = await supabase.rpc('toggle_favorite', { p_residence_id: id });
+      if (error) throw error;
+    } catch (error) {
+      setFavorites(previous);
+      Alert.alert('Favoris', error instanceof Error ? error.message : 'Impossible de retirer ce favori.');
+    }
   };
 
   if (loading) {
@@ -53,6 +63,14 @@ export default function FavorisScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      {loadError && (
+        <View className="mx-4 mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+          <Text className="text-xs text-red-700">{loadError}</Text>
+          <TouchableOpacity onPress={() => void load()} className="mt-1 self-start">
+            <Text className="text-xs font-semibold text-red-800">Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Text className="text-xl font-bold text-slate-900">
           Mes Favoris ({favorites.length})
