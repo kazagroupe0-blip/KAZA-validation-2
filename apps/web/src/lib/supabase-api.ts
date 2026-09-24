@@ -19,6 +19,51 @@ export class ApiError extends Error {
   }
 }
 
+type FunctionErrorPayload = {
+  error?: unknown;
+  message?: unknown;
+  error_description?: unknown;
+  msg?: unknown;
+  details?: unknown;
+  fields?: unknown;
+};
+
+function normalizeFunctionFields(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  const fields: Record<string, string[]> = {};
+  for (const [key, messages] of entries) {
+    if (!Array.isArray(messages)) return undefined;
+    const normalized = messages.filter((message): message is string => typeof message === 'string');
+    if (normalized.length !== messages.length) return undefined;
+    fields[key] = normalized;
+  }
+  return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
+function getFunctionErrorDetails(payload: unknown, status: number): {
+  message: string;
+  fields?: Record<string, string[]>;
+} {
+  if (typeof payload === 'string' && payload.trim()) {
+    return { message: payload.trim() };
+  }
+
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const body = payload as FunctionErrorPayload;
+    const candidates = [body.error_description, body.message, body.msg, body.error, body.details];
+    const message = candidates.find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    );
+    return {
+      message: message?.trim() ?? `Erreur HTTP ${status}`,
+      fields: normalizeFunctionFields(body.fields),
+    };
+  }
+
+  return { message: `Erreur HTTP ${status}` };
+}
+
 /** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
 export function assertBeninPhone(phone: string): void {
   const cleaned = phone.replace(/\s+/g, '');
@@ -68,11 +113,10 @@ async function callFunction<T>(name: string, body: unknown): Promise<T> {
         },
         body: JSON.stringify(body),
       });
-      const payload = (await res.json().catch(() => null)) as { error?: string } | T | null;
+      const payload = await res.json().catch(() => null);
       if (!res.ok) {
-        const error = new Error(`HTTP ${res.status}`) as Error & { status: number };
-        error.status = res.status;
-        throw error;
+        const details = getFunctionErrorDetails(payload, res.status);
+        throw new ApiError(res.status, details.message, details.fields);
       }
       return payload as T;
     },
