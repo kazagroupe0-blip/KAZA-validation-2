@@ -27,6 +27,7 @@ export function ResidenceMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const initialCenterRef = useRef(center);
 
   // initialisation une seule fois
   useEffect(() => {
@@ -34,7 +35,7 @@ export function ResidenceMap({
     const map = L.map(containerRef.current, {
       zoomControl: true,
       attributionControl: true,
-      center: center ? [center.lat, center.lng] : [6.3703, 2.3912], // Cotonou par défaut
+      center: initialCenterRef.current ? [initialCenterRef.current.lat, initialCenterRef.current.lng] : [6.3703, 2.3912], // Cotonou par défaut
       zoom: 12,
     });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -46,7 +47,6 @@ export function ResidenceMap({
       map.remove();
       mapRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // synchronisation des marqueurs avec les données

@@ -19,6 +19,13 @@ export class ApiError extends Error {
   }
 }
 
+type FunctionErrorPayload = {
+  error?: unknown;
+  message?: unknown;
+  details?: unknown;
+  fields?: unknown;
+};
+
 /** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
 export function assertBeninPhone(phone: string): void {
   const cleaned = phone.replace(/\s+/g, '');
@@ -68,11 +75,20 @@ async function callFunction<T>(name: string, body: unknown): Promise<T> {
         },
         body: JSON.stringify(body),
       });
-      const payload = (await res.json().catch(() => null)) as { error?: string } | T | null;
+      const payload = (await res.json().catch(() => null)) as FunctionErrorPayload | T | null;
       if (!res.ok) {
-        const error = new Error(`HTTP ${res.status}`) as Error & { status: number };
-        error.status = res.status;
-        throw error;
+        const body = payload && typeof payload === 'object'
+          ? payload as FunctionErrorPayload
+          : null;
+        const message = [body?.error, body?.message, body?.details]
+          .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          ?? `La fonction ${name} a échoué (HTTP ${res.status})`;
+
+        const fields = body?.fields && typeof body.fields === 'object'
+          ? body.fields as Record<string, string[]>
+          : undefined;
+
+        throw new ApiError(res.status, message, fields);
       }
       return payload as T;
     },

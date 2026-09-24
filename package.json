@@ -24,8 +24,7 @@
     "db:studio": "supabase studio",
     "functions:serve": "supabase functions serve",
     "db:types": "supabase gen types typescript --local --schema public > packages/shared/src/database.types.ts",
-    "db:types:check": "npm run db:types && git diff --exit-code -- packages/shared/src/database.types.ts apps/web/src/lib/database.types.ts",
-    "typecheck:mobile": "npm run typecheck --workspace apps/mobile"
+    "db:types:check": "npm run db:types && git diff --exit-code -- packages/shared/src/database.types.ts apps/web/src/lib/database.types.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
