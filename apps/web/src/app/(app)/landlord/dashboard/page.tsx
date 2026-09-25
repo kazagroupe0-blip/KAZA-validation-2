@@ -138,7 +138,7 @@ export default function LandlordDashboardPage() {
         listMyResidences(),
       ]);
       setStats(s);
-      setRecentPayments(p.filter((x) => x.status === 'pending').slice(0, 3));
+      setRecentPayments(p.filter((x) => x.status === 'pending' && x.method === 'cash').slice(0, 3));
       setRecentReceipts(rec.filter((x) => x.status === 'pending_signature').slice(0, 3));
       setRecentLeases(l.filter((x) => x.status === 'active').slice(0, 4));
       setRecentResidences(r.slice(0, 4));
