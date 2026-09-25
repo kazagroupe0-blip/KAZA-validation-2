@@ -93,6 +93,7 @@ describe('Landlord payouts', () => {
         period_end: today,
         method: 'mobile_money',
         provider: 'mtn',
+        provider_ref: `test-provider-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         status: 'pending',
       })
       .select('id')
