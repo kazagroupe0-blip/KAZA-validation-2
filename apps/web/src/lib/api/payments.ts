@@ -5,7 +5,6 @@ import type {
   LandlordPayout,
 } from '../types';
 import { normalizeError, callFunction } from '../supabase-api';
-import { requireUser } from '../require-user';
 
 export interface FedapayInitResult {
   payment_id: string;
@@ -60,24 +59,12 @@ export async function initFedapayPayment(
 }
 
 export async function confirmPayment(paymentId: string): Promise<void> {
-  const user = await requireUser().catch(() => null);
-  if (!user) return;
-  const { error } = await supabase
-    .from('payments')
-    .update({
-      status: 'confirmed',
-      confirmed_at: new Date().toISOString(),
-      confirmed_by: user.id,
-    })
-    .eq('id', paymentId);
+  const { error } = await supabase.rpc('confirm_cash_payment', { p_payment_id: paymentId });
   if (error) throw normalizeError(error, 'Validation impossible');
 }
 
 export async function rejectPayment(paymentId: string): Promise<void> {
-  const { error } = await supabase
-    .from('payments')
-    .update({ status: 'rejected' })
-    .eq('id', paymentId);
+  const { error } = await supabase.rpc('reject_payment', { p_payment_id: paymentId });
   if (error) throw normalizeError(error, 'Rejet impossible');
 }
 
