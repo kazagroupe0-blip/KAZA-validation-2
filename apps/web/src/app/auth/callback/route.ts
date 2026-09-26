@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 
@@ -13,9 +14,17 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/explorer';
+  const cookieStore = await cookies();
+  const cookieNames = cookieStore.getAll().map(({ name }) => name);
+  const hasPkceVerifier = cookieNames.some((name) => name.endsWith('-code-verifier'));
+
+  logger.info('auth_callback_received', {
+    hasCode: Boolean(code),
+    hasPkceVerifier,
+    next,
+  });
 
   if (code) {
-    const cookieStore = await cookies();
     const supabase = createServerClient(
       env.supabaseUrl,
       env.supabaseAnonKey,
@@ -40,9 +49,21 @@ export async function GET(request: Request) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      logger.info('auth_callback_exchange_succeeded', { next });
       return NextResponse.redirect(`${origin}${next}`);
     }
+
+    logger.warn('auth_callback_exchange_failed', {
+      hasCode: true,
+      hasPkceVerifier,
+      errorMessage: error.message,
+      errorName: error.name,
+    });
   }
+
+  logger.warn('auth_callback_redirected_to_login', {
+    reason: code ? 'code_exchange_failed' : 'missing_code',
+  });
 
   return NextResponse.redirect(`${origin}/login?error=callback`);
 }
