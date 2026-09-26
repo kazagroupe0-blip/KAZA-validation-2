@@ -142,9 +142,12 @@ export async function requestPasswordReset(
   captchaToken: string,
   redirectTo?: string,
 ): Promise<void> {
+  const target =
+    redirectTo ?? `${window.location.origin}/auth/callback?next=/reset-password`;
+
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     captchaToken,
-    redirectTo: redirectTo ?? '/reset-password',
+    redirectTo: target,
   });
   if (error) throw new ApiError(400, error.message);
 }
