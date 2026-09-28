@@ -36,7 +36,7 @@ enable_signup = true
 enable_confirmations = true
 
 [auth.sms.test_otp]
-"+2290190000000" = "123456"
+2290190000000 = "123456"
 
 [storage]
 enabled = true
