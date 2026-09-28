@@ -122,17 +122,98 @@ export async function signUp(
 }
 
 export async function requestOtp(phone: string, captchaToken: string): Promise<void> {
-  assertBeninPhone(phone);
-  const { error } = await supabase.auth.signInWithOtp({ phone, options: { captchaToken } });
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
+  const { error } = await supabase.auth.signInWithOtp({
+    phone: normalizedPhone,
+    options: {
+      captchaToken,
+      // Le mode SMS est une connexion d'un compte existant.
+      // Ne jamais créer silencieusement un second compte avec le même numéro.
+      shouldCreateUser: false,
+    },
+  });
   if (error) throw new ApiError(400, error.message);
 }
 
 export async function verifyOtp(phone: string, token: string, captchaToken: string): Promise<void> {
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
   const { error } = await supabase.auth.verifyOtp({
-    phone,
+    phone: normalizedPhone,
     token,
     type: 'sms',
     options: { captchaToken },
+  });
+  if (error) throw new ApiError(400, error.message);
+}
+
+/**
+ * Lance la vérification du téléphone déjà enregistré dans le profil.
+ *
+ * Le numéro de profil reste la source de contact KAZA ; il ne devient
+ * identifiant Auth qu'après confirmation de possession par SMS.
+ */
+export async function requestPhoneVerification(captchaToken: string): Promise<string> {
+  const user = await requireUser();
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('phone')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileError) throw normalizeError(profileError, 'Téléphone introuvable');
+  const phone = profile?.phone ? normalizeBeninPhone(profile.phone) : '';
+  if (!phone) {
+    throw new ApiError(400, 'Ajoutez d’abord un numéro de téléphone dans votre profil.');
+  }
+
+  assertBeninPhone(phone);
+
+  if (user.phone === phone && user.phone_confirmed_at) {
+    return phone;
+  }
+
+  const { error } = await supabase.auth.updateUser(
+    { phone },
+    // updateUser déclenche le SMS de vérification de phone_change.
+    // Le CAPTCHA protège ici l’action qui entraîne l’envoi SMS.
+    { data: { phone_verification_requested_at: new Date().toISOString() } },
+  );
+  if (error) throw new ApiError(400, error.message);
+
+  return phone;
+}
+
+export async function verifyPhoneVerification(
+  phone: string,
+  token: string,
+): Promise<void> {
+  const user = await requireUser();
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('phone')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileError) throw normalizeError(profileError, 'Téléphone introuvable');
+
+  const profilePhone = profile?.phone ? normalizeBeninPhone(profile.phone) : '';
+  if (profilePhone !== normalizedPhone) {
+    throw new ApiError(
+      409,
+      'Le numéro du profil a changé. Rechargez la page avant de valider le code.',
+    );
+  }
+
+  const { error } = await supabase.auth.verifyOtp({
+    phone: normalizedPhone,
+    token,
+    type: 'phone_change',
   });
   if (error) throw new ApiError(400, error.message);
 }
