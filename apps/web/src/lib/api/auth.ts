@@ -154,7 +154,7 @@ export async function verifyOtp(phone: string, token: string, captchaToken: stri
  * Le numéro de profil reste la source de contact KAZA ; il ne devient
  * identifiant Auth qu'après confirmation de possession par SMS.
  */
-export async function requestPhoneVerification(captchaToken: string): Promise<string> {
+export async function requestPhoneVerification(): Promise<string> {
   const user = await requireUser();
 
   const { data: profile, error: profileError } = await supabase
@@ -175,12 +175,9 @@ export async function requestPhoneVerification(captchaToken: string): Promise<st
     return phone;
   }
 
-  const { error } = await supabase.auth.updateUser(
-    { phone },
-    // updateUser déclenche le SMS de vérification de phone_change.
-    // Le CAPTCHA protège ici l’action qui entraîne l’envoi SMS.
-    { data: { phone_verification_requested_at: new Date().toISOString() } },
-  );
+  // updateUser déclenche le SMS de vérification de phone_change.
+  // L'authentification de la session et les limites Auth protègent cette action.
+  const { error } = await supabase.auth.updateUser({ phone });
   if (error) throw new ApiError(400, error.message);
 
   return phone;
