@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Building2, LayoutDashboard, LogOut, MessageSquare, Home, Search, UserRound, Heart, X, Menu } from 'lucide-react';
+import { Building2, LayoutDashboard, LogOut, MessageSquare, Home, Search, UserRound, Heart, Smartphone, X, Menu } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { NotificationBell } from '@/components/notifications/notification-bell';
@@ -92,6 +92,17 @@ export function Navbar() {
           )}
 
           {user && <NotificationBell />}
+
+          {user && (
+            <Link
+              href="/verify-phone"
+              title="Activer mon numéro"
+              aria-label="Activer mon numéro"
+              className="grid h-9 w-9 place-items-center rounded-kaza text-kaza-muted transition-colors hover:bg-kaza-surface hover:text-kaza-text"
+            >
+              <Smartphone className="h-4.5 w-4.5" aria-hidden />
+            </Link>
+          )}
 
           {(role === 'bailleur' || role === 'admin') && (
             <Link
@@ -211,6 +222,14 @@ export function Navbar() {
                     >
                       <UserRound className="h-5.5 w-5.5 shrink-0" aria-hidden />
                       Mon profil
+                    </Link>
+                    <Link
+                      href="/verify-phone"
+                      onClick={() => setIsMenuOpen(false)}
+                      className="flex items-center gap-3 rounded-kaza px-3 py-3 text-base font-medium text-kaza-text hover:bg-kaza-bg"
+                    >
+                      <Smartphone className="h-5.5 w-5.5 shrink-0" aria-hidden />
+                      Activer mon numéro
                     </Link>
                     <button
                       onClick={() => { void signOut(); setIsMenuOpen(false); }}
