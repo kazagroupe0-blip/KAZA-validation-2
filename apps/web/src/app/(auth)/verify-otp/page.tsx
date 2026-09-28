@@ -67,7 +67,7 @@ export default function VerifyOtpPage() {
         </h1>
         <p className="mt-1 text-sm text-kaza-muted">
           {step === 'request'
-            ? 'Recevez un code à 6 chiffres sur votre téléphone.'
+            ? 'Optionnel : utilisez votre numéro confirmé pour vous connecter sans mot de passe. La connexion par email et mot de passe reste disponible.'
             : `Code envoyé au ${phone}.`}
         </p>
       </div>
