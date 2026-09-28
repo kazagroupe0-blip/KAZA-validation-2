@@ -1,0 +1,114 @@
+name: Phone Validation
+
+on:
+  push:
+    branches:
+      - fix/phone-activation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phone-auth:
+    name: Phone auth local validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-phone-anon-key
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_HCAPTCHA_SITEKEY: ""
+
+      - name: Install Supabase CLI
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/download/v2.114.0/supabase_linux_amd64.tar.gz -o /tmp/supabase.tar.gz
+          tar xzf /tmp/supabase.tar.gz -C /tmp
+          sudo mv /tmp/supabase /usr/local/bin/supabase
+          supabase --version
+
+      - name: Login to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
+          else
+            echo "Docker Hub credentials not configured; continuing with anonymous pulls."
+          fi
+
+      - name: Start Supabase local
+        run: supabase start
+
+      - name: Reset database
+        run: supabase db reset
+
+      - name: Run phone auth integration tests
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+        run: |
+          env_vars=$(supabase status -o env)
+          anon_key=$(printf '%s\n' "$env_vars" | grep -iE '^anon_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+          service_role_key=$(printf '%s\n' "$env_vars" | grep -iE '^service_role_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+
+          if [ -z "$anon_key" ] || [ -z "$service_role_key" ]; then
+            echo "::error::Unable to retrieve local Supabase keys."
+            exit 1
+          fi
+
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY="$anon_key"
+          export SUPABASE_SERVICE_ROLE_KEY="$service_role_key"
+
+          npx vitest run -c vitest.config.integration.ts tests/integration/phone-auth.test.ts
+
+      - name: Run phone activation E2E
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_HCAPTCHA_SITEKEY: ""
+        run: |
+          env_vars=$(supabase status -o env)
+          anon_key=$(printf '%s\n' "$env_vars" | grep -iE '^anon_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY="$anon_key"
+
+          npm run dev > /tmp/kaza-next.log 2>&1 &
+          NEXT_PID=$!
+          trap 'kill "$NEXT_PID" 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/login >/dev/null; then
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              cat /tmp/kaza-next.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          cd apps/web
+          npx playwright install chromium
+          npx playwright test e2e/auth.spec.ts --project=chromium --grep "existing profile phone"
