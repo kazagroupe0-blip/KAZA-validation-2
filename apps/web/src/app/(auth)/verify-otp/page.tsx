@@ -85,8 +85,7 @@ export default function VerifyOtpPage() {
             type="tel"
             required
             placeholder="+229 01 00 00 00 00"
-            pattern="\+229[0-9]{10}"
-            maxLength={16}
+            maxLength={19}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
