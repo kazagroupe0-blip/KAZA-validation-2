@@ -154,9 +154,6 @@ function LoginForm() {
           <Link href="/verify-otp" className="font-medium text-kaza-brand transition-opacity hover:opacity-80">
             Connexion par SMS
           </Link>
-          <Link href="/verify-phone" className="font-medium text-kaza-brand transition-opacity hover:opacity-80">
-            Activer mon numéro
-          </Link>
           <Link href="/forgot-password" className="font-medium text-kaza-brand transition-opacity hover:opacity-80">
             Mot de passe oublié ?
           </Link>
