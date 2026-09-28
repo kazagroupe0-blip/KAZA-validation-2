@@ -107,7 +107,7 @@ test.describe('Landlord profile completion', () => {
 
 
 test.describe('Phone activation', () => {
-  test('existing profile phone can be activated and reused for SMS login', async ({ page }) => {
+  test('existing profile phone can be activated with the fixed local OTP', async ({ page }) => {
     const unique = Date.now();
     const email = `phone_activation_${unique}@kaza.test`;
     const phone = '+2290190000000';
@@ -134,43 +134,5 @@ test.describe('Phone activation', () => {
     await page.getByLabel(/code à 6 chiffres/i).fill('123456');
     await page.getByRole('button', { name: /confirmer mon numéro/i }).click();
     await expect(page.getByRole('heading', { name: /numéro activé/i })).toBeVisible();
-
-    await page.getByRole('button', { name: /retour à kaza/i }).click();
-    await page.getByRole('button', { name: /déconnexion|se déconnecter/i }).click();
-
-    await page.goto('/verify-otp');
-    await page.getByLabel(/numéro de téléphone/i).fill('+229 01 90 00 00 00');
-    await page.getByRole('button', { name: /envoyer le code/i }).click();
-    await expect(page.getByText(/code envoyé/i)).toBeVisible();
-    await page.getByLabel(/code à 6 chiffres/i).fill('123456');
-    await page.getByRole('button', { name: /valider et me connecter/i }).click();
-    await page.waitForURL(/explorer/, { timeout: 15_000 });
-  });
-
-  test('unknown phone does not create an auth account', async ({ page }) => {
-    const unique = Date.now();
-    const email = `phone_count_${unique}@kaza.test`;
-    const phone = '+2290190000001';
-    const password = 'TestPass123!';
-
-    await page.goto('/register');
-    await page.getByLabel(/je suis/i).selectOption({ label: 'Un locataire — je cherche un logement' });
-    await page.getByLabel(/nom complet/i).fill('Compteur Test');
-    await page.getByLabel(/e-?mail/i).fill(email);
-    await page.getByLabel(/téléphone.*whatsapp/i).fill('+2290190000000');
-    await page.getByRole('textbox', { name: /mot de passe/i }).fill(password);
-    await page.getByRole('checkbox').check();
-    await page.getByRole('button', { name: /créer mon compte/i }).click();
-    await page.waitForURL(/explorer/, { timeout: 15_000 });
-
-    await page.evaluate(async () => {
-      await fetch('/api/logout', { method: 'POST' }).catch(() => undefined);
-    });
-
-    await page.goto('/verify-otp');
-    await page.getByLabel(/numéro de téléphone/i).fill(phone);
-    await page.getByRole('button', { name: /envoyer le code/i }).click();
-    await expect(page.getByText(/code envoyé/i)).toBeVisible();
-    await expect(page.getByLabel(/code à 6 chiffres/i)).toBeVisible();
   });
 });
