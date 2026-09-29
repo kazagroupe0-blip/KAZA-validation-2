@@ -104,3 +104,35 @@ test.describe('Landlord profile completion', () => {
     await expect(page.locator('#main').getByText(/profil propriétaire incomplet/i)).not.toBeVisible();
   });
 });
+
+
+test.describe('Phone activation', () => {
+  test('existing profile phone can be activated with the fixed local OTP', async ({ page }) => {
+    const unique = Date.now();
+    const email = `phone_activation_${unique}@kaza.test`;
+    const phone = '+2290190000000';
+    const password = 'TestPass123!';
+
+    await page.goto('/register');
+    await page.getByLabel(/je suis/i).selectOption({ label: 'Un locataire — je cherche un logement' });
+    await page.getByLabel(/nom complet/i).fill('Téléphone Test');
+    await page.getByLabel(/e-?mail/i).fill(email);
+    await page.getByLabel(/téléphone.*whatsapp/i).fill(phone);
+    await page.getByRole('textbox', { name: /mot de passe/i }).fill(password);
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: /créer mon compte/i }).click();
+
+    await page.waitForURL(/explorer/, { timeout: 15_000 });
+    await page.goto('/verify-phone');
+
+    await expect(page.getByRole('heading', { name: /activer mon numéro/i })).toBeVisible();
+    await expect(page.getByText(phone)).toBeVisible();
+
+    await page.getByRole('button', { name: /recevoir le code par sms/i }).click();
+    await expect(page.getByText(/code envoyé/i)).toBeVisible();
+
+    await page.getByLabel(/code à 6 chiffres/i).fill('123456');
+    await page.getByRole('button', { name: /confirmer mon numéro/i }).click();
+    await expect(page.getByRole('heading', { name: /numéro activé/i })).toBeVisible();
+  });
+});

@@ -150,7 +150,7 @@ function LoginForm() {
       </Button>
 
       <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Link href="/verify-otp" className="font-medium text-kaza-brand transition-opacity hover:opacity-80">
             Connexion par SMS
           </Link>

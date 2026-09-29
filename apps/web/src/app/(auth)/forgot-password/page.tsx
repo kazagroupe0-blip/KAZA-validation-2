@@ -92,7 +92,7 @@ export default function ForgotPasswordPage() {
           Mot de passe oublié
         </h1>
         <p className="mt-1 text-sm text-kaza-muted">
-          Saisissez votre email pour recevoir un lien de réinitialisation.
+          Saisissez votre email pour recevoir un lien de réinitialisation. La récupération du compte reste basée sur l’email, même lorsque la connexion par SMS est activée.
         </p>
       </div>
 
