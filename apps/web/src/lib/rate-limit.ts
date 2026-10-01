@@ -96,7 +96,7 @@ export async function checkLoginAttempts(opts: { identifier: string; ip: string 
       reset: Math.max(byIdentifier.reset, byIp.reset),
     };
   }
-  const bi = memoryCheckLimit(`login:identifier:${opts.identifier.toLowerCase()}`, EMAIL_LIMIT, IDENTIFIER_WINDOW);
+  const bi = memoryCheckLimit(`login:identifier:${opts.identifier.toLowerCase()}`, IDENTIFIER_LIMIT, IDENTIFIER_WINDOW);
   if (!bi.allowed) return bi;
   return memoryCheckLimit(`login:ip:${opts.ip}`, IP_LIMIT, IP_WINDOW);
 }
