@@ -215,6 +215,24 @@ describe('Security: targeted lease invitations', () => {
       residence_id: residenceId,
     });
 
+    const { error: secondInvitationError } = await getClient(landlordA).rpc('create_lease_invitation', {
+      p_residence_id: residenceId,
+    });
+    expect(secondInvitationError).toBeDefined();
+
+    const { data: acceptedRows, error: acceptedRowsError } = await supabaseAdmin
+      .from('lease_invitations')
+      .select('status,accepted_by')
+      .eq('residence_id', residenceId);
+
+    expect(acceptedRowsError).toBeNull();
+    expect(acceptedRows).toEqual([
+      expect.objectContaining({
+        status: 'accepted',
+        accepted_by: tenantA.user.id,
+      }),
+    ]);
+
     const { error: secondAcceptError } = await getClient(tenantA).rpc('accept_lease_invitation', {
       p_token: invitation.token,
     });
@@ -249,6 +267,19 @@ describe('Security: targeted lease invitations', () => {
     });
     expect(leaseError).toBeNull();
     expect(leaseId).toBeDefined();
+
+    const { data: consumedRow, error: consumedError } = await supabaseAdmin
+      .from('lease_invitations')
+      .select('status,accepted_by,accepted_at')
+      .eq('id', invitation.invitation_id)
+      .single();
+
+    expect(consumedError).toBeNull();
+    expect(consumedRow).toMatchObject({
+      status: 'consumed',
+      accepted_by: tenantA.user.id,
+    });
+    expect(consumedRow?.accepted_at).toBeTruthy();
   });
 
   it('revoked and expired invitations cannot be used', async () => {
