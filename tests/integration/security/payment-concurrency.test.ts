@@ -166,6 +166,40 @@ describe('Payment concurrency & idempotence', () => {
     });
   });
 
+  describe('Cash payment period validation', () => {
+    it('rejects a payment period before the lease coverage date', async () => {
+      const { leaseId } = await createLease(landlordA, tenantA);
+      const periodStart = formatLocalDate(new Date(Date.now() - 86400000));
+      const periodEnd = formatLocalDate();
+
+      const { error } = await getClient(tenantA).rpc('report_cash_payment', {
+        p_lease_id: leaseId,
+        p_amount: 100000,
+        p_period_start: periodStart,
+        p_period_end: periodEnd,
+      });
+
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('La période déclarée chevauche une période déjà couverte');
+    });
+
+    it('rejects a payment period whose end precedes its start', async () => {
+      const { leaseId } = await createLease(landlordA, tenantA);
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() - 86400000));
+
+      const { error } = await getClient(tenantA).rpc('report_cash_payment', {
+        p_lease_id: leaseId,
+        p_amount: 100000,
+        p_period_start: periodStart,
+        p_period_end: periodEnd,
+      });
+
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('Période de paiement invalide');
+    });
+  });
+
   describe('Payment confirmation idempotence', () => {
     it('double confirmation on same payment is idempotent', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
