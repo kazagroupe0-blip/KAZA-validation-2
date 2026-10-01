@@ -66,6 +66,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       zone: 'Haie Vive',
       is_published: true,
       is_verified: true,
+      moderation_status: 'approved',
     }).select('id').single();
     if (error) throw error;
     return data.id;
