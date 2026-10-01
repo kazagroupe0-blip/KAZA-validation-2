@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { Residence } from '@kaza/shared';
 import { PropertyCard } from '@/components/property/property-card';
+import { resolveResidencePhotos } from '@/lib/residence-photos';
 
 export default function FavorisScreen() {
   const router = useRouter();
@@ -30,7 +31,12 @@ export default function FavorisScreen() {
     try {
       const { data, error } = await supabase.rpc('list_my_favorites');
       if (error) throw error;
-      setFavorites((data ?? []) as unknown as Residence[]);
+      const rows = (data ?? []) as unknown as Residence[];
+      const resolved = await Promise.all(rows.map(async (row) => ({
+        ...row,
+        photos: await resolveResidencePhotos(row.photos ?? []),
+      })));
+      setFavorites(resolved);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Impossible de charger vos favoris.');
     } finally {

@@ -29,6 +29,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { formatFCFA } from '@kaza/shared';
 import type { Residence, Review, ReviewsResult } from '@kaza/shared';
+import { resolveResidencePhotos } from '@/lib/residence-photos';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -60,7 +61,10 @@ export default function ResidenceDetailScreen() {
         supabase.rpc('list_reviews', { p_residence_id: id }),
       ]);
 
-      if (resRes.data) setResidence(resRes.data as unknown as Residence);
+      if (resRes.data) {
+        const row = resRes.data as unknown as Residence;
+        setResidence({ ...row, photos: await resolveResidencePhotos(row.photos ?? []) });
+      }
       if (favRes.data) setIsFavorite((favRes.data as string[]).includes(id));
       if (reviewsRes.data) {
         const result = reviewsRes.data as unknown as ReviewsResult;

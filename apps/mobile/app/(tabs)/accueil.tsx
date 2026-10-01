@@ -24,6 +24,7 @@ import { formatFCFA } from '@kaza/shared';
 import type { Residence, ResidenceType } from '@kaza/shared';
 import { PropertyCard } from '@/components/property/property-card';
 import { useAuth } from '@/lib/auth-context';
+import { resolveResidencePhotos } from '@/lib/residence-photos';
 
 const FILTER_CHIPS: { label: string; value: ResidenceType | 'all' }[] = [
   { label: 'Tous', value: 'all' },
@@ -59,7 +60,12 @@ export default function AccueilScreen() {
       };
       const { data, error } = await supabase.rpc('search_residences', params);
       if (error) throw error;
-      setResults((data ?? []) as unknown as Residence[]);
+      const rows = (data ?? []) as unknown as Residence[];
+      const resolved = await Promise.all(rows.map(async (row) => ({
+        ...row,
+        photos: await resolveResidencePhotos(row.photos ?? []),
+      })));
+      setResults(resolved);
     } catch {
       setResults([]);
     } finally {

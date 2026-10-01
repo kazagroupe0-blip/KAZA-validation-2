@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { Residence } from '@kaza/shared';
+import { resolveResidencePhotos } from '@/lib/residence-photos';
 
 export default function EditResidenceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -28,6 +29,7 @@ export default function EditResidenceScreen() {
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<Record<string, string>>({});
   const [moderationStatus, setModerationStatus] = useState('draft');
   const [moderationReason, setModerationReason] = useState<string | null>(null);
   const [cautionMonths, setCautionMonths] = useState('3');
@@ -42,7 +44,19 @@ export default function EditResidenceScreen() {
         setTitle(r.title ?? '');
         setPrice(String(r.price_monthly ?? ''));
         setDescription(r.description ?? '');
-        setPhotos(r.photos ?? []);
+        const photoRefs = r.photos ?? [];
+        setPhotos(photoRefs);
+        const previewEntries = await Promise.all(
+          photoRefs.map(async (ref) => {
+            const [signed] = await resolveResidencePhotos([ref]);
+            return signed ? [ref, signed] as const : null;
+          }),
+        );
+        setPhotoPreviews(
+          Object.fromEntries(
+            previewEntries.filter((entry): entry is readonly [string, string] => Boolean(entry)),
+          ),
+        );
         setModerationStatus((r as any).moderation_status ?? ((r as any).is_verified ? 'approved' : (r as any).is_published ? 'pending' : 'draft'));
         setModerationReason((r as any).moderation_reason ?? null);
         if (r.deposit && r.price_monthly) {
@@ -83,8 +97,7 @@ export default function EditResidenceScreen() {
           const response = await fetch(uri);
           const blob = await response.blob();
           await supabase.storage.from('residence-photos').upload(fileName, blob, { contentType: 'image/jpeg' });
-          const { data: urlData } = supabase.storage.from('residence-photos').getPublicUrl(fileName);
-          uploadedPhotos.push(urlData.publicUrl);
+          uploadedPhotos.push(fileName);
         }
       }
 
@@ -265,7 +278,7 @@ export default function EditResidenceScreen() {
         <View className="flex-row flex-wrap gap-2 mb-6">
           {photos.map((uri, i) => (
             <View key={i} className="w-[30%] aspect-square rounded-xl overflow-hidden relative">
-              <Image source={{ uri }} className="w-full h-full" contentFit="cover" />
+              <Image source={{ uri: photoPreviews[uri] ?? uri }} className="w-full h-full" contentFit="cover" />
               <TouchableOpacity
                 onPress={() => removePhoto(i)}
                 className="absolute top-1 right-1 w-6 h-6 bg-black/60 rounded-full items-center justify-center"

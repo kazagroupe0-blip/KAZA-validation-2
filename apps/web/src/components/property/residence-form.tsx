@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Upload, Trash2 } from 'lucide-react';
-import { createResidence, updateResidence, ApiError } from '@/lib/supabase-api';
+import { createResidence, updateResidence, ApiError, getSignedStorageUrl } from '@/lib/supabase-api';
+import { storagePathFromUrl } from '@/lib/api/storage';
 import { supabase } from '@/lib/supabase-client';
 import type { ResidenceWithRelations, ResidenceType } from '@/lib/types';
 import { TYPE_LABELS } from '@/lib/format';
@@ -88,10 +89,30 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
         }
       : initial,
   );
-  const [photos, setPhotos] = useState<string[]>(existing?.photos ?? []);
+  const [photos, setPhotos] = useState<string[]>(() =>
+    (existing?.photos ?? []).map(storagePathFromUrl).filter((path): path is string => Boolean(path)),
+  );
+  const [photoPreviewUrls, setPhotoPreviewUrls] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(
+        photos.map(async (photo) => {
+          const signed = await getSignedStorageUrl('residence-photos', photo);
+          return signed ? [photo, signed] as const : null;
+        }),
+      );
+      if (cancelled) return;
+      setPhotoPreviewUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry))));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [photos]);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -122,7 +143,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
 
     setUploading(true);
     const bucket = supabase.storage.from('residence-photos');
-    const uploadedUrls: string[] = [];
+    const uploadedPaths: string[] = [];
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -144,12 +165,14 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
             toast.error(`Échec de l'upload de ${file.name}`);
             return;
           }
-          uploadedUrls.push(bucket.getPublicUrl(path).data.publicUrl);
+          uploadedPaths.push(path);
+          const signed = await getSignedStorageUrl('residence-photos', path);
+          if (signed) setPhotoPreviewUrls((prev) => ({ ...prev, [path]: signed }));
         })
       );
     }
-    if (uploadedUrls.length > 0) {
-      setPhotos((prev) => [...prev, ...uploadedUrls]);
+    if (uploadedPaths.length > 0) {
+      setPhotos((prev) => [...prev, ...uploadedPaths]);
     }
     setUploading(false);
   }
@@ -204,7 +227,11 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
         <div className="flex flex-wrap gap-3">
           {photos.map((p) => (
             <div key={p} className="relative h-24 w-32 overflow-hidden rounded-kaza border border-kaza-border">
-              <Image src={p} alt="" fill className="object-cover" sizes="128px" />
+              {photoPreviewUrls[p] ? (
+                <Image src={photoPreviewUrls[p]} alt="" fill className="object-cover" sizes="128px" />
+              ) : (
+                <div className="grid h-full place-items-center text-xs text-kaza-faint">Aperçu indisponible</div>
+              )}
               <button
                 type="button"
                 onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}

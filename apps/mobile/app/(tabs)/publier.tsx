@@ -89,10 +89,8 @@ export default function PublierScreen() {
         const { error } = await supabase.storage
           .from('residence-photos')
           .upload(fileName, blob, { contentType: 'image/jpeg' });
-        if (!error) {
-          const { data: urlData } = supabase.storage.from('residence-photos').getPublicUrl(fileName);
-          uploadedUrls.push(urlData.publicUrl);
-        }
+        if (error) throw error;
+        uploadedUrls.push(fileName);
       }
 
       const { error } = await supabase.from('residences').insert({
