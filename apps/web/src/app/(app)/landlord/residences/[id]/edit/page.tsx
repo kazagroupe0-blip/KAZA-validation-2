@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Rocket, KeyRound } from 'lucide-react';
+import { ArrowLeft, Rocket, KeyRound, Link2, Clock, Copy, ShieldCheck, Ban } from 'lucide-react';
 import {
   getResidence,
   updateResidence,
@@ -10,6 +10,9 @@ import {
   withdrawResidencePublication,
   createLease,
   listTenants,
+  createLeaseInvitation,
+  listLeaseInvitations,
+  revokeLeaseInvitation,
   ApiError,
 } from '@/lib/supabase-api';
 import type { Profile, Residence } from '@/lib/types';
@@ -42,6 +45,7 @@ export default function EditResidencePage() {
   const [moderationStatus, setModerationStatus] = useState<string>('draft');
   const [publishError, setPublishError] = useState<string | null>(null);
   const [leaseModal, setLeaseModal] = useState(false);
+  const [inviteModal, setInviteModal] = useState(false);
   const [tenants, setTenants] = useState<Profile[]>([]);
   const [tenantLoadError, setTenantLoadError] = useState<string | null>(null);
 
@@ -155,6 +159,10 @@ export default function EditResidencePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setInviteModal(true)} data-testid="invite-tenant">
+            <Link2 className="h-4 w-4" aria-hidden />
+            Inviter un locataire
+          </Button>
           <Button variant="secondary" onClick={() => setLeaseModal(true)} data-testid="create-lease">
             <KeyRound className="h-4 w-4" aria-hidden />
             Créer un bail
@@ -216,6 +224,12 @@ export default function EditResidencePage() {
         <ResidenceForm existing={residence} />
       </div>
 
+      <InviteTenantModal
+        open={inviteModal}
+        onClose={() => setInviteModal(false)}
+        residenceId={residence.id}
+      />
+
       <CreateLeaseModal
         open={leaseModal}
         onClose={() => setLeaseModal(false)}
@@ -230,6 +244,196 @@ export default function EditResidencePage() {
         }}
       />
     </div>
+  );
+}
+
+
+function formatInvitationExpiry(value: string): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function InviteTenantModal({
+  open,
+  onClose,
+  residenceId,
+}: Readonly<{
+  open: boolean;
+  onClose: () => void;
+  residenceId: string;
+}>) {
+  const toast = useToast();
+  const [active, setActive] = useState<{
+    invitation_id: string;
+    expires_at: string;
+    status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  } | null>(null);
+  const [created, setCreated] = useState<{
+    invitation_id: string;
+    token: string;
+    expires_at: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingActive, setLoadingActive] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setCreated(null);
+    setError(null);
+    setLoadingActive(true);
+    void listLeaseInvitations(residenceId)
+      .then((items) => {
+        const pending = items.find(
+          (item) => item.status === 'pending' && new Date(item.expires_at).getTime() > Date.now(),
+        );
+        setActive(
+          pending
+            ? {
+                invitation_id: pending.invitation_id,
+                expires_at: pending.expires_at,
+                status: pending.status,
+              }
+            : null,
+        );
+      })
+      .catch((err) => {
+        setActive(null);
+        setError(err instanceof ApiError ? err.message : 'Impossible de charger le lien actif.');
+      })
+      .finally(() => setLoadingActive(false));
+  }, [open, residenceId]);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const invitationLink = created
+    ? `${origin}/tenant/lease-invitation?token=${encodeURIComponent(created.token)}`
+    : null;
+
+  async function handleCreate() {
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await createLeaseInvitation(residenceId);
+      setCreated(next);
+      setActive({
+        invitation_id: next.invitation_id,
+        expires_at: next.expires_at,
+        status: 'pending',
+      });
+      toast.success('Lien privé créé', 'Transmettez-le directement au locataire concerné.');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Création du lien impossible';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!active) return;
+    setRevoking(true);
+    setError(null);
+    try {
+      await revokeLeaseInvitation(active.invitation_id);
+      setActive(null);
+      setCreated(null);
+      toast.success('Invitation révoquée');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Révocation impossible';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!invitationLink) return;
+    try {
+      await navigator.clipboard.writeText(invitationLink);
+      toast.success('Lien copié');
+    } catch {
+      setError('Copie automatique indisponible. Sélectionnez le lien et copiez-le manuellement.');
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Inviter un locataire" wide>
+      <div className="space-y-5">
+        <div className="rounded-kaza border border-kaza-border bg-kaza-bg p-4">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-kaza-brand" aria-hidden />
+            <div>
+              <p className="text-sm font-medium text-kaza-text">Un lien privé, sans annuaire</p>
+              <p className="mt-1 text-xs leading-relaxed text-kaza-muted">
+                KAZA ne vous ouvre pas une liste globale de locataires. Le lien cible ce bien précis,
+                expire sous 48 heures et devient inutilisable dès qu’il est révoqué ou remplacé.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {error ? (
+          <p className="rounded-kaza border border-kaza-danger/30 bg-kaza-danger/5 p-3 text-sm text-kaza-danger">
+            {error}
+          </p>
+        ) : null}
+
+        {loadingActive ? (
+          <p className="text-sm text-kaza-muted">Vérification du lien actif…</p>
+        ) : active ? (
+          <div className="rounded-kaza border border-kaza-border p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-kaza-text">Un lien est déjà actif</p>
+                <p className="mt-1 flex items-center gap-2 text-xs text-kaza-muted">
+                  <Clock className="h-3.5 w-3.5" aria-hidden />
+                  Expire le {formatInvitationExpiry(active.expires_at)}
+                </p>
+              </div>
+              <Ban className="h-5 w-5 text-kaza-faint" aria-hidden />
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-kaza-faint">
+              KAZA ne peut pas récupérer le jeton secret après sa création. Le bouton ci-dessous permet
+              d’invalider ce lien si nécessaire ; générer un nouveau lien l’invalidera également.
+            </p>
+            <Button type="button" variant="secondary" loading={revoking} onClick={() => void handleRevoke()} className="mt-4">
+              Révoquer ce lien
+            </Button>
+          </div>
+        ) : null}
+
+        {created && invitationLink ? (
+          <div className="rounded-kaza border border-kaza-brand/30 bg-kaza-brand/5 p-4">
+            <p className="text-sm font-medium text-kaza-text">Lien prêt à transmettre</p>
+            <p className="mt-1 text-xs text-kaza-muted">
+              Expire le {formatInvitationExpiry(created.expires_at)}. Une nouvelle génération invalidera ce lien.
+            </p>
+            <div className="mt-3 break-all rounded-kaza border border-kaza-border bg-kaza-bg p-3 text-xs text-kaza-text">
+              {invitationLink}
+            </div>
+            <Button type="button" variant="primary" onClick={() => void copyLink()} className="mt-3">
+              <Copy className="h-4 w-4" aria-hidden />
+              Copier le lien
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Fermer
+          </Button>
+          <Button type="button" loading={loading} onClick={() => void handleCreate()}>
+            <Link2 className="h-4 w-4" aria-hidden />
+            {active ? 'Générer un nouveau lien' : 'Générer le lien privé'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -256,7 +460,7 @@ function CreateLeaseModal({
   const [errors, setErrors] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    if (open && tenants.length === 0) void onLoadTenants();
+    if (open) void onLoadTenants();
     if (open) {
       setForm((f) => ({
         ...f,
@@ -310,8 +514,9 @@ function CreateLeaseModal({
         ) : tenants.length === 0 ? (
           <p data-testid="no-linked-tenants" className="rounded-kaza border border-kaza-border bg-kaza-bg p-3 text-sm leading-relaxed text-kaza-muted">
             Aucun locataire lié à votre compte pour le moment. Pour protéger les coordonnées personnelles,
-            KAZA affiche ici uniquement les locataires avec lesquels vous avez déjà un bail ou une conversation.
-            Demandez au locataire de vous contacter depuis une annonce KAZA, puis revenez créer le bail.
+            KAZA affiche ici uniquement les locataires avec lesquels vous avez déjà un bail, une conversation
+            ou une invitation privée acceptée. Utilisez « Inviter un locataire » pour créer un lien ciblé,
+            puis revenez ici après son acceptation pour créer le bail.
           </p>
         ) : null}
         <div className="grid gap-4 sm:grid-cols-3">
