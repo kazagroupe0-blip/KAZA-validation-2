@@ -55,6 +55,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [savedComplete, setSavedComplete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [authPhone, setAuthPhone] = useState<string | null>(null);
+  const [phoneVerificationLoading, setPhoneVerificationLoading] = useState(false);
 
   const initializedUserId = useRef<string | null>(null);
 
@@ -89,6 +91,16 @@ export default function ProfilePage() {
     && (user.onboarding_completed === true || formComplete || savedComplete);
 
   useEffect(() => {
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setAuthPhone(data.user?.phone ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
     if (user?.role !== 'bailleur') return;
     void listMyLandlordPayouts(5).then(setPayouts).catch(() => setPayouts([]));
   }, [user]);
@@ -97,28 +109,9 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const desiredPhone = normalizeBeninPhone(phone);
-      if (desiredPhone && !BENIN_PHONE_RE.test(desiredPhone)) {
-        throw new ApiError(400, 'Numéro invalide — format attendu : +229 01 00 00 00 00');
-      }
-
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError) {
-        throw new ApiError(401, 'Session invalide — reconnectez-vous');
-      }
-
-      const authPhone = normalizeBeninPhone(authData.user?.phone ?? '');
-      if (!desiredPhone && authPhone) {
-        throw new ApiError(
-          400,
-          'Le numéro utilisé pour la connexion ne peut pas être supprimé sans en vérifier un nouveau.',
-        );
-      }
-
-      const phoneNeedsVerification = desiredPhone !== authPhone;
-
-      const profilePatch = {
+      const updatedProfile = await updateProfile({
         full_name: fullName,
+        phone: user?.phone ?? null,
         ...(user?.role === 'bailleur'
           ? {
               business_name: businessName,
@@ -129,34 +122,6 @@ export default function ProfilePage() {
               bank_iban: bankIban,
             }
           : {}),
-      };
-
-      if (phoneNeedsVerification) {
-        if (!desiredPhone) {
-          throw new ApiError(400, 'Renseignez un numéro béninois avant de poursuivre.');
-        }
-
-        // Le numéro est d'abord enregistré dans Supabase Auth en attente.
-        // Le profil public ne recevra le nouveau numéro qu'après OTP phone_change.
-        await requestPhoneChange(desiredPhone);
-        const updatedProfile = await updateProfile(profilePatch);
-
-        setUserProfile(updatedProfile);
-        setSavedComplete(false);
-        window.dispatchEvent(new Event('kaza:notifications-refresh'));
-        toast.info(
-          'Vérification nécessaire',
-          'Un code SMS vient d’être envoyé. Validez-le pour activer la connexion par téléphone.',
-        );
-        router.push(
-          `/verify-phone?phone=${encodeURIComponent(desiredPhone)}&next=${encodeURIComponent('/profile')}`,
-        );
-        return;
-      }
-
-      const updatedProfile = await updateProfile({
-        ...profilePatch,
-        phone: desiredPhone || null,
       });
 
       setUserProfile(updatedProfile);
@@ -176,6 +141,30 @@ export default function ProfilePage() {
       toast.error(err instanceof ApiError ? err.message : 'Mise à jour impossible');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function verifyPhone() {
+    const desiredPhone = normalizeBeninPhone(phone);
+    if (!BENIN_PHONE_RE.test(desiredPhone)) {
+      toast.error('Numéro invalide', 'Utilisez le format béninois +229 01 00 00 00 00.');
+      return;
+    }
+
+    setPhoneVerificationLoading(true);
+    try {
+      await requestPhoneChange(desiredPhone);
+      toast.info(
+        'Vérification nécessaire',
+        'Un code SMS vient d’être envoyé pour activer ce numéro.',
+      );
+      router.push(
+        `/verify-phone?phone=${encodeURIComponent(desiredPhone)}&next=${encodeURIComponent('/profile')}`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Envoi du code impossible.');
+    } finally {
+      setPhoneVerificationLoading(false);
     }
   }
 
@@ -248,8 +237,33 @@ export default function ProfilePage() {
               autoComplete="name"
             />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                label="Téléphone"
+              <div>
+                <Input
+                  label="Téléphone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  hint={
+                    authPhone
+                      ? 'Numéro vérifié pour la connexion par téléphone.'
+                      : 'Vérifiez ce numéro par SMS pour activer la connexion par téléphone.'
+                  }
+                  autoComplete="tel"
+                />
+                {BENIN_PHONE_RE.test(normalizeBeninPhone(phone)) &&
+                  normalizeBeninPhone(phone) !== normalizeBeninPhone(authPhone ?? '') && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2"
+                      loading={phoneVerificationLoading}
+                      onClick={() => void verifyPhone()}
+                    >
+                      {authPhone ? 'Vérifier ce nouveau numéro' : 'Activer la connexion par téléphone'}
+                    </Button>
+                  )}
+              </div>
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
