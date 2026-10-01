@@ -239,6 +239,56 @@ describe('Security: targeted lease invitations', () => {
     expect(secondAcceptError).toBeDefined();
   });
 
+  it('lets the owner cancel an accepted invitation before lease creation', async () => {
+    const residenceId = await createResidence(landlordA);
+    const invitation = await createInvitation(landlordA, residenceId);
+
+    const { error: acceptError } = await getClient(tenantA).rpc('accept_lease_invitation', {
+      p_token: invitation.token,
+    });
+    expect(acceptError).toBeNull();
+
+    const { error: revokeError } = await getClient(landlordA).rpc('revoke_lease_invitation', {
+      p_invitation_id: invitation.invitation_id,
+    });
+    expect(revokeError).toBeNull();
+
+    const { data: revokedRow, error: revokedRowError } = await supabaseAdmin
+      .from('lease_invitations')
+      .select('status,accepted_by,accepted_at,revoked_at')
+      .eq('id', invitation.invitation_id)
+      .single();
+
+    expect(revokedRowError).toBeNull();
+    expect(revokedRow).toMatchObject({
+      status: 'revoked',
+      accepted_by: null,
+      accepted_at: null,
+    });
+    expect(revokedRow?.revoked_at).toBeTruthy();
+
+    const { error: acceptAgainError } = await getClient(tenantA).rpc('accept_lease_invitation', {
+      p_token: invitation.token,
+    });
+    expect(acceptAgainError).toBeDefined();
+
+    const { data: notification, error: notificationError } = await getClient(tenantA)
+      .from('notifications')
+      .select('type,data')
+      .eq('user_id', tenantA.user.id)
+      .eq('type', 'lease')
+      .contains('data', { kind: 'lease_invitation_revoked' })
+      .limit(1)
+      .maybeSingle();
+
+    expect(notificationError).toBeNull();
+    expect(notification?.data).toMatchObject({
+      kind: 'lease_invitation_revoked',
+      invitation_id: invitation.invitation_id,
+      residence_id: residenceId,
+    });
+  });
+
   it('requires the invitation link before creating a lease when no conversation exists', async () => {
     const residenceId = await createResidence(landlordA);
 
