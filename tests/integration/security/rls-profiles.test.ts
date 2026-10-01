@@ -183,6 +183,28 @@ describe('RLS: profiles table', () => {
       expect(data?.full_name).toBe('Admin Updated');
     });
 
+    it('duplicate profile phone is rejected', async () => {
+      const profileIdA = await getProfileId(clientA);
+      const profileIdB = await getProfileId(clientB);
+      const { data: profileA, error: readError } = await clientAdmin
+        .from('profiles')
+        .select('phone')
+        .eq('id', profileIdA)
+        .single();
+      expect(readError).toBeNull();
+      expect(profileA?.phone).toBeTruthy();
+
+      const { data, error } = await clientAdmin
+        .from('profiles')
+        .update({ phone: profileA!.phone })
+        .eq('id', profileIdB)
+        .select('phone')
+        .single();
+
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
+    });
+
     it('admin CAN promote user to bailleur', async () => {
       const profileIdB = await getProfileId(clientB);
       const { data, error } = await clientAdmin
