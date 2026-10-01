@@ -2,7 +2,7 @@ import { supabase } from '../supabase-client';
 import type { LeaseWithRelations, Profile } from '../types';
 import { normalizeError } from '../supabase-api';
 
-export type LeaseInvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+export type LeaseInvitationStatus = 'pending' | 'accepted' | 'consumed' | 'revoked' | 'expired';
 
 export interface LeaseInvitationSummary {
   invitation_id: string;
