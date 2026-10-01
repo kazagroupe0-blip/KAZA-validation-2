@@ -6,13 +6,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn, signInWithGoogle, ApiError } from '@/lib/supabase-api';
 import { env } from '@/lib/env';
 import { useVisibleHcaptcha } from '@/components/ui/hcaptcha';
+import { resolveAuthIdentifier } from '@/lib/auth-identifier';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { GoogleIcon } from '@/components/ui/google-icon';
 import { useToast } from '@/components/ui/toast';
 
 function LoginForm() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,9 +50,9 @@ function LoginForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError('Saisissez une adresse email valide.');
+    const resolved = resolveAuthIdentifier(identifier);
+    if (!resolved) {
+      setError('Saisissez un email ou un numéro de téléphone béninois valide.');
       return;
     }
     setError(null);
@@ -63,7 +64,7 @@ function LoginForm() {
     }
     setLoading(true);
     try {
-      await signIn(trimmed, password, captchaTokenVisible);
+      await signIn(resolved.value, password, captchaTokenVisible);
       visibleHcaptcha.reset();
       setCaptchaTokenVisible('');
       toast.success('Bienvenue sur KAZA');
@@ -115,18 +116,18 @@ function LoginForm() {
           <div className="w-full border-t border-kaza-border" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-white px-3 text-kaza-muted">Ou continuer avec email</span>
+          <span className="bg-white px-3 text-kaza-muted">Ou continuer avec email ou téléphone</span>
         </div>
       </div>
 
       <Input
-        label="Email"
-        type="email"
-        autoComplete="email"
+        label="Email ou numéro de téléphone"
+        type="text"
+        autoComplete="username"
         required
-        placeholder="vous@exemple.com"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        placeholder="vous@exemple.com ou +229 01 00 00 00 00"
+        value={identifier}
+        onChange={(e) => setIdentifier(e.target.value)}
       />
       <Input
         label="Mot de passe"
