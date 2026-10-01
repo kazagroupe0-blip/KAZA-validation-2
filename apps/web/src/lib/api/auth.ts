@@ -190,7 +190,14 @@ export async function verifyPhoneChange(phone: string, token: string): Promise<v
     throw new ApiError(409, 'Le numéro n’a pas été confirmé. Recommencez la vérification.');
   }
 
-  await updateProfile({ phone: normalizedPhone });
+  try {
+    await updateProfile({ phone: normalizedPhone });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === '23505') {
+      throw new ApiError(409, 'Ce numéro est déjà utilisé par un autre profil.');
+    }
+    throw err;
+  }
 }
 
 
