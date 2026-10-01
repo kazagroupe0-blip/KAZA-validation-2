@@ -590,4 +590,46 @@ describe('RLS: residences table', () => {
       expect(error).toBeDefined();
     });
   });
+
+  describe('public search bounds', () => {
+    it('rejects partial coordinates', async () => {
+      const { data, error } = await supabaseAnon.rpc('search_residences', {
+        p_lat: 6.37,
+        p_lng: null,
+        p_radius_km: 10,
+        p_limit: 40,
+        p_offset: 0,
+      });
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('Latitude et longitude doivent être fournies ensemble');
+    });
+
+    it('rejects invalid latitude', async () => {
+      const { data, error } = await supabaseAnon.rpc('search_residences', {
+        p_lat: 91,
+        p_lng: 2.4,
+        p_radius_km: 10,
+        p_limit: 40,
+        p_offset: 0,
+      });
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('Latitude invalide');
+    });
+
+    it('rejects oversized search text', async () => {
+      const { data, error } = await supabaseAnon.rpc('search_residences', {
+        p_q: 'x'.repeat(201),
+        p_limit: 40,
+        p_offset: 0,
+      });
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('Recherche trop longue');
+    });
+  });
 });
