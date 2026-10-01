@@ -264,12 +264,6 @@ export default function ProfilePage() {
                     </Button>
                   )}
               </div>
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                hint="Format : +229 01 00 00 00 00"
-                autoComplete="tel"
-              />
               <Input
                 label="Email"
                 value={user?.email ?? ''}
