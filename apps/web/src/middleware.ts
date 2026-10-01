@@ -79,7 +79,8 @@ export async function middleware(request: NextRequest) {
     logger.warn('unauthenticated_protected_access', { requestId, metadata: { redirect_to: '/login', path: pathname } });
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    url.searchParams.set('redirect', pathname);
+    url.search = '';
+    url.searchParams.set('redirect', `${pathname}${request.nextUrl.search}`);
     const redirectResponse = NextResponse.redirect(url);
     redirectResponse.headers.set('x-request-id', requestId);
     return redirectResponse;
