@@ -162,6 +162,24 @@ describe('RLS: leases, payments, receipts tables', () => {
   });
 
   describe('leases INSERT', () => {
+    it('landlord CANNOT target a non-locataire profile', async () => {
+      const residenceId = await createPublishedVerifiedResidence(landlordA.user.id);
+      await supabaseAdmin.rpc('admin_moderate_residence', {
+        p_residence_id: residenceId,
+        p_action: 'approve',
+      });
+
+      const { data, error } = await getClient(landlordA).rpc('create_lease', {
+        p_residence_id: residenceId,
+        p_tenant_id: landlordB.user.id,
+        p_start_date: formatLocalDate(),
+        p_monthly_rent: 100000,
+      });
+
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
+    });
+
     it('landlord CAN create lease via RPC', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       expect(leaseId).toBeDefined();
