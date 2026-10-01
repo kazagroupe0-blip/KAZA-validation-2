@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, User, Phone, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import type { Role } from '@kaza/shared';
+import { isValidBeninPhoneNumber, normalizeBeninPhone } from '@/lib/phone';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function RegisterScreen() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [consent, setConsent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -29,30 +31,50 @@ export default function RegisterScreen() {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Erreur', 'Le mot de passe doit contenir au moins 6 caractères.');
+
+    const normalizedPhone = normalizeBeninPhone(phone);
+    if (!isValidBeninPhoneNumber(normalizedPhone)) {
+      Alert.alert('Erreur', 'Saisissez un numéro béninois valide à 10 chiffres.');
+      return;
+    }
+
+    if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+      Alert.alert('Erreur', 'Le mot de passe doit contenir au moins 8 caractères, avec des lettres et des chiffres.');
+      return;
+    }
+
+    if (!consent) {
+      Alert.alert('Consentement requis', 'Acceptez le traitement de vos données personnelles pour créer votre compte.');
       return;
     }
 
     setLoading(true);
     try {
-      const cleanPhone = phone.replace(/\s/g, '');
-      const email = `${cleanPhone}@kaza.bj`;
-      const { error } = await supabase.auth.signUp({
-        email,
+      const { data, error } = await supabase.auth.signUp({
+        phone: normalizedPhone,
         password,
         options: {
           data: {
             full_name: fullName.trim(),
-            phone: `+229${cleanPhone}`,
+            phone: normalizedPhone,
             role,
+            consent_apdp: true,
           },
         },
       });
       if (error) throw error;
 
-      if (role === 'bailleur') {
-        router.replace('/(auth)/onboarding');
+      if (data.session) {
+        if (role === 'bailleur') {
+          router.replace('/(auth)/onboarding');
+        } else {
+          router.replace('/');
+        }
+      } else {
+        router.push({
+          pathname: '/(auth)/verify-otp',
+          params: { phone: normalizedPhone, mode: 'signup' },
+        });
       }
     } catch (err: any) {
       Alert.alert('Erreur', err.message ?? 'Inscription échouée.');
@@ -146,6 +168,19 @@ export default function RegisterScreen() {
             {showPassword ? <Eye size={18} color="#64748B" /> : <EyeOff size={18} color="#64748B" />}
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          onPress={() => setConsent((value) => !value)}
+          activeOpacity={0.8}
+          className={`flex-row items-start mb-5`}
+        >
+          <View className={`w-5 h-5 rounded-md border items-center justify-center mr-3 mt-0.5 ${consent ? 'bg-kaza-vert border-kaza-vert' : 'border-slate-300'}`}>
+            {consent ? <Text className="text-white text-xs font-bold">✓</Text> : null}
+          </View>
+          <Text className="flex-1 text-xs leading-5 text-slate-500">
+            J'accepte que KAZA traite mes données personnelles conformément à sa politique de confidentialité.
+          </Text>
+        </TouchableOpacity>
 
         {/* Register button */}
         <TouchableOpacity
