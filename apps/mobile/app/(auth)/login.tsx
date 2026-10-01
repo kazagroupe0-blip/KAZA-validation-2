@@ -14,6 +14,13 @@ import { useRouter } from 'expo-router';
 import { Phone, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 
+const BENIN_PHONE_RE = /^\+229\d{10}$/;
+
+function normalizeBeninPhone(phone: string): string {
+  const cleaned = phone.trim().replace(/\s+/g, '');
+  return /^\d{10}$/.test(cleaned) ? '+229' + cleaned : cleaned;
+}
+
 export default function LoginScreen() {
   const router = useRouter();
   const [phone, setPhone] = useState('');
@@ -26,11 +33,24 @@ export default function LoginScreen() {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs.');
       return;
     }
+    const normalizedPhone = normalizeBeninPhone(phone);
+    if (!BENIN_PHONE_RE.test(normalizedPhone)) {
+      Alert.alert('Erreur', 'Saisissez un numéro béninois valide à 10 chiffres.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const email = `${phone.replace(/\s/g, '')}@kaza.bj`;
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      const { error } = await supabase.auth.signInWithPassword({
+        phone: normalizedPhone,
+        password,
+      });
+      if (error) {
+        const message = /phone.*not.*confirm|not.*confirm.*phone/i.test(error.message)
+          ? 'Ce numéro n’est pas encore vérifié. Vérifiez-le depuis votre profil avant de vous connecter avec votre téléphone.'
+          : error.message;
+        throw new Error(message);
+      }
     } catch (err: any) {
       Alert.alert('Erreur', err.message ?? 'Identifiants incorrects.');
     } finally {
@@ -65,7 +85,7 @@ export default function LoginScreen() {
           <Text className="text-sm text-slate-500 ml-2 mr-1">+229</Text>
           <TextInput
             className="flex-1 text-sm text-slate-900 ml-1"
-            placeholder="00 00 00 00"
+            placeholder="01 00 00 00 00"
             placeholderTextColor="#94A3B8"
             keyboardType="phone-pad"
             value={phone}
