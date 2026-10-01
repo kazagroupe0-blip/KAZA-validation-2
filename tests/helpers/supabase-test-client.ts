@@ -74,7 +74,6 @@ export async function createTestUser(role: 'locataire' | 'bailleur' | 'admin' = 
     email_confirm: true,
     user_metadata: {
       full_name: `Test ${role}`,
-      phone: '+2290100000000',
       role,
       consent_apdp: true,
     },
@@ -82,6 +81,23 @@ export async function createTestUser(role: 'locataire' | 'bailleur' | 'admin' = 
 
   if (authError) throw authError;
   if (!authData.user) throw new Error('User creation failed');
+
+  // Test users need a real, unique profile phone because production now
+  // enforces profiles.phone uniqueness. We keep auth.users.phone unset so
+  // these fixtures do not pretend to be verified phone-auth identities.
+  let phoneAssigned = false;
+  for (let attempt = 0; attempt < 5 && !phoneAssigned; attempt += 1) {
+    const digits = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+    const { error: phoneError } = await supabaseAdmin
+      .from('profiles')
+      .update({ phone: `+229${digits}` })
+      .eq('id', authData.user.id);
+    if (!phoneError) {
+      phoneAssigned = true;
+      break;
+    }
+  }
+  if (!phoneAssigned) throw new Error('Unable to assign a unique test phone');
 
   // The handle_new_user trigger only accepts 'locataire'/'bailleur' from
   // user_metadata — anything else (including 'admin') becomes 'visiteur'.
