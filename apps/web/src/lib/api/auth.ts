@@ -163,19 +163,17 @@ export async function updatePassword(newPassword: string): Promise<void> {
 }
 
 export async function requestPhoneChange(phone: string): Promise<void> {
-  const user = await requireUser();
+  await requireUser();
   const normalizedPhone = normalizeBeninPhone(phone);
   assertBeninPhone(normalizedPhone);
 
   const { error } = await supabase.auth.updateUser({ phone: normalizedPhone });
   if (error) throw new ApiError(400, error.message);
 
-  if (!user.id) {
-    throw new ApiError(401, 'Session invalide — reconnectez-vous');
-  }
 }
 
 export async function verifyPhoneChange(phone: string, token: string): Promise<void> {
+  await requireUser();
   const normalizedPhone = normalizeBeninPhone(phone);
   assertBeninPhone(normalizedPhone);
 
