@@ -511,17 +511,48 @@ describe('RLS: residences table', () => {
       expect(data?.is_verified).toBe(false); // écrasé par le garde-fou
     });
 
-    it('admin CAN update any residence including is_verified', async () => {
-      const residenceId = await createResidenceDirect(landlordA.user.id);
+    it('direct admin approval state is valid when all visibility flags agree', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+      const clientAdmin = getClient(adminUser);
+      const { data, error } = await clientAdmin
+        .from('residences')
+        .update({
+          is_published: true,
+          is_verified: true,
+          moderation_status: 'approved',
+        })
+        .eq('id', residenceId)
+        .select('is_published, is_verified, moderation_status')
+        .single();
+
+      expect(error).toBeNull();
+      expect(data).toMatchObject({
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+      });
+    });
+
+    it('admin cannot create an invalid moderation/publication state by direct update', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
       const clientAdmin = getClient(adminUser);
       const { data, error } = await clientAdmin
         .from('residences')
         .update({ is_verified: true })
         .eq('id', residenceId)
-        .select('is_verified')
+        .select('is_published, is_verified, moderation_status')
         .single();
-      expect(error).toBeNull();
-      expect(data?.is_verified).toBe(true);
+
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
     });
   });
 
