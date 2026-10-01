@@ -83,7 +83,7 @@ export async function createLeaseInvitation(residenceId: string): Promise<Create
 
 export async function listLeaseInvitations(residenceId?: string): Promise<LeaseInvitationSummary[]> {
   const { data, error } = await supabase.rpc('list_my_lease_invitations', {
-    p_residence_id: residenceId ?? null,
+    p_residence_id: residenceId,
   });
   if (error) throw normalizeError(error, 'Chargement des invitations impossible');
   return (data ?? []) as unknown as LeaseInvitationSummary[];
