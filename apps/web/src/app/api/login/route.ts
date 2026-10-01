@@ -42,7 +42,11 @@ export async function POST(req: NextRequest) {
 
   const captchaRequired = Boolean(env.hcaptchaSitekey);
   if (captchaRequired && !captchaToken) {
-    logger.warn('login_captcha_missing', { requestId, message: 'hCaptcha token required', metadata: { email } });
+    logger.warn('login_captcha_missing', {
+      requestId,
+      message: 'hCaptcha token required',
+      metadata: { identifier: identifier.value },
+    });
     return NextResponse.json(
       { error: 'Vérification anti-robot requise (hCaptcha)' },
       { status: 400 },
