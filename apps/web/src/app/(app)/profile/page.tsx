@@ -20,8 +20,6 @@ const MOMO_OPTIONS = [
   { value: 'celtiis', label: 'Celtiis Cash' },
 ];
 
-const BENIN_PHONE_RE = /^\+229\d{10}$/;
-
 function missingLandlordFields(profile: Profile | null): string[] {
   if (!profile || profile.role !== 'bailleur') return [];
 
