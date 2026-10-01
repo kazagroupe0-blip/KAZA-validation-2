@@ -202,6 +202,7 @@ jobs:
             delete from public.visits where true;
             delete from public.conversations where true;
             delete from public.leases where true;
+            delete from public.lease_invitations where true;
             delete from public.notifications where true;
             delete from public.landlord_payouts where true;
             delete from public.admin_audit_logs where true;
