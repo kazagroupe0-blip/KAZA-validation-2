@@ -68,6 +68,10 @@ describe('Payment concurrency & idempotence', () => {
 
   async function createLease(landlord: any, tenant: any) {
     const residenceId = await createPublishedVerifiedResidence(landlord);
+    const { error: linkError } = await getClient(tenant).rpc('open_conversation', {
+      p_residence_id: residenceId,
+    });
+    if (linkError) throw linkError;
     // Use create_lease RPC (exists in 20260908232309)
     const { data, error } = await getClient(landlord).rpc('create_lease', {
       p_residence_id: residenceId,
