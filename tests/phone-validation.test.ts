@@ -1,8 +1,21 @@
 import { describe, it, expect } from 'vitest';
+import { normalizeBeninPhone, BENIN_PHONE_RE } from '../apps/web/src/lib/phone';
 
 const PHONE_RE = /^\+229[0-9]{10}$/;
 
 describe('Benin phone validation (+229 10 digits)', () => {
+  it('normalizes local and spaced Benin formats to the canonical E.164 form', () => {
+    expect(normalizeBeninPhone('0100000000')).toBe('+2290100000000');
+    expect(normalizeBeninPhone('01 00 00 00 00')).toBe('+2290100000000');
+    expect(normalizeBeninPhone('+229 01 00 00 00 00')).toBe('+2290100000000');
+    expect(normalizeBeninPhone('+2290100000000')).toBe('+2290100000000');
+  });
+
+  it('keeps invalid phone values invalid after normalization', () => {
+    expect(BENIN_PHONE_RE.test(normalizeBeninPhone('97123456'))).toBe(false);
+    expect(BENIN_PHONE_RE.test(normalizeBeninPhone('+225 01 00 00 00 00'))).toBe(false);
+  });
+
   it('accepts valid +229 format', () => {
     expect(PHONE_RE.test('+2290100000000')).toBe(true);
     expect(PHONE_RE.test('+2299712345678')).toBe(true);
