@@ -101,8 +101,7 @@ export async function signUp(
       error.status === 429 ||
       msg.includes('rate limit') ||
       msg.includes('too many requests') ||
-      msg.includes('email rate') ||
-      msg.includes('database error saving new user');
+      msg.includes('email rate');
 
     if (isRateLimit && attempt < MAX_RETRIES - 1) {
       const delay = BASE_DELAY_MS * Math.pow(2, attempt);
