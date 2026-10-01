@@ -13,13 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Phone, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
-
-const BENIN_PHONE_RE = /^\+229\d{10}$/;
-
-function normalizeBeninPhone(phone: string): string {
-  const cleaned = phone.trim().replace(/\s+/g, '');
-  return /^\d{10}$/.test(cleaned) ? '+229' + cleaned : cleaned;
-}
+import { isValidBeninPhoneNumber, normalizeBeninPhone } from '@/lib/phone';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -34,7 +28,7 @@ export default function LoginScreen() {
       return;
     }
     const normalizedPhone = normalizeBeninPhone(phone);
-    if (!BENIN_PHONE_RE.test(normalizedPhone)) {
+    if (!isValidBeninPhoneNumber(normalizedPhone)) {
       Alert.alert('Erreur', 'Saisissez un numéro béninois valide à 10 chiffres.');
       return;
     }
