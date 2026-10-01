@@ -392,4 +392,51 @@ describe('RLS: leases, payments, receipts tables', () => {
       }
     });
   });
+
+  describe('expense RPC authorization', () => {
+    it('tenant CANNOT create an expense', async () => {
+      const { data, error } = await getClient(tenantA).rpc('create_expense', {
+        p_category: 'autre',
+        p_amount: 1000,
+        p_date: formatLocalDate(),
+        p_description: 'audit-role',
+      });
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('Seuls les bailleurs peuvent gérer les dépenses');
+    });
+
+    it('landlord CAN create and delete a valid expense', async () => {
+      const { data, error } = await getClient(landlordA).rpc('create_expense', {
+        p_category: 'autre',
+        p_amount: 1000,
+        p_date: formatLocalDate(),
+        p_description: 'audit-valid',
+      });
+
+      expect(error).toBeNull();
+      expect(data).toBeDefined();
+
+      if (data) {
+        const { error: deleteError } = await getClient(landlordA).rpc('delete_expense', {
+          p_id: data,
+        });
+        expect(deleteError).toBeNull();
+      }
+    });
+  });
+
+  describe('landlord cashflow bounds', () => {
+    it('CANNOT request more than ten years of cashflow', async () => {
+      const { data, error } = await getClient(landlordA).rpc('landlord_cashflow', {
+        p_from: formatLocalDate(),
+        p_to: formatLocalDate(new Date(Date.now() + 3661 * 86400000)),
+      });
+
+      expect(data).toBeNull();
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('Période trop longue (maximum 10 ans)');
+    });
+  });
 });
