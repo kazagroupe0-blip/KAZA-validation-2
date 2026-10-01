@@ -57,6 +57,7 @@ describe('RLS: notifications & admin tables', () => {
       zone: 'Haie Vive',
       is_published: true,
       is_verified: true,
+      moderation_status: 'approved',
     }).select('id').single();
     if (error) throw error;
     return data.id;
