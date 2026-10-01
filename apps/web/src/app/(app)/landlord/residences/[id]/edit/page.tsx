@@ -268,7 +268,7 @@ function InviteTenantModal({
   const [active, setActive] = useState<{
     invitation_id: string;
     expires_at: string;
-    status: 'pending' | 'accepted' | 'revoked' | 'expired';
+    status: 'pending' | 'accepted' | 'consumed' | 'revoked' | 'expired';
   } | null>(null);
   const [created, setCreated] = useState<{
     invitation_id: string;
@@ -287,15 +287,17 @@ function InviteTenantModal({
     setLoadingActive(true);
     void listLeaseInvitations(residenceId)
       .then((items) => {
-        const pending = items.find(
-          (item) => item.status === 'pending' && new Date(item.expires_at).getTime() > Date.now(),
-        );
+        const activeInvitation =
+          items.find(
+            (item) => item.status === 'pending' && new Date(item.expires_at).getTime() > Date.now(),
+          ) ?? items.find((item) => item.status === 'accepted');
+
         setActive(
-          pending
+          activeInvitation
             ? {
-                invitation_id: pending.invitation_id,
-                expires_at: pending.expires_at,
-                status: pending.status,
+                invitation_id: activeInvitation.invitation_id,
+                expires_at: activeInvitation.expires_at,
+                status: activeInvitation.status,
               }
             : null,
         );
@@ -389,7 +391,9 @@ function InviteTenantModal({
           <div className="rounded-kaza border border-kaza-border p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-kaza-text">Un lien est déjà actif</p>
+                <p className="text-sm font-medium text-kaza-text">
+                  {active.status === 'accepted' ? 'Invitation acceptée' : 'Un lien est déjà actif'}
+                </p>
                 <p className="mt-1 flex items-center gap-2 text-xs text-kaza-muted">
                   <Clock className="h-3.5 w-3.5" aria-hidden />
                   Expire le {formatInvitationExpiry(active.expires_at)}
@@ -398,12 +402,15 @@ function InviteTenantModal({
               <Ban className="h-5 w-5 text-kaza-faint" aria-hidden />
             </div>
             <p className="mt-3 text-xs leading-relaxed text-kaza-faint">
-              KAZA ne peut pas récupérer le jeton secret après sa création. Le bouton ci-dessous permet
-              d’invalider ce lien si nécessaire ; générer un nouveau lien l’invalidera également.
+              {active.status === 'accepted'
+                ? 'Le locataire a accepté ce lien et son compte est maintenant rattaché à ce bien. Vous pouvez le sélectionner dans « Créer un bail ».'
+                : 'KAZA ne peut pas récupérer le jeton secret après sa création. Révoquez ce lien si nécessaire avant d’en créer un autre.'}
             </p>
-            <Button type="button" variant="secondary" loading={revoking} onClick={() => void handleRevoke()} className="mt-4">
-              Révoquer ce lien
-            </Button>
+            {active.status === 'pending' ? (
+              <Button type="button" variant="secondary" loading={revoking} onClick={() => void handleRevoke()} className="mt-4">
+                Révoquer ce lien
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -427,9 +434,9 @@ function InviteTenantModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Fermer
           </Button>
-          <Button type="button" loading={loading} onClick={() => void handleCreate()}>
+          <Button type="button" loading={loading} disabled={Boolean(active)} onClick={() => void handleCreate()}>
             <Link2 className="h-4 w-4" aria-hidden />
-            {active ? 'Générer un nouveau lien' : 'Générer le lien privé'}
+            {active ? (active.status === 'accepted' ? 'Invitation déjà acceptée' : 'Un lien est déjà actif') : 'Générer le lien privé'}
           </Button>
         </div>
       </div>
