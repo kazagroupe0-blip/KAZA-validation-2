@@ -49,6 +49,7 @@ describe('Migration regression tests', () => {
       zone: 'Test',
       is_published: true,
       is_verified: true,
+      moderation_status: 'approved',
     }).select('id').single();
     if (error) throw error;
     return data.id;
