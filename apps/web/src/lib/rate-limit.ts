@@ -68,10 +68,10 @@ const EMAIL_WINDOW = 60;
 const IP_LIMIT = 20;
 const IP_WINDOW = 60;
 
-export async function checkLoginAttempts(opts: { email: string; ip: string }): Promise<RateLimitResult> {
+export async function checkLoginAttempts(opts: { identifier: string; ip: string }): Promise<RateLimitResult> {
   const rl = getRatelimit();
   if (rl) {
-    const byEmail = await rl.limit(`login:email:${opts.email.toLowerCase()}`);
+    const byEmail = await rl.limit(`login:identifier:${opts.identifier.toLowerCase()}`);
     if (!byEmail.success) {
       return {
         allowed: false,
@@ -96,7 +96,7 @@ export async function checkLoginAttempts(opts: { email: string; ip: string }): P
       reset: Math.max(byEmail.reset, byIp.reset),
     };
   }
-  const be = memoryCheckLimit(`login:email:${opts.email.toLowerCase()}`, EMAIL_LIMIT, EMAIL_WINDOW);
+  const be = memoryCheckLimit(`login:identifier:${opts.identifier.toLowerCase()}`, EMAIL_LIMIT, EMAIL_WINDOW);
   if (!be.allowed) return be;
   return memoryCheckLimit(`login:ip:${opts.ip}`, IP_LIMIT, IP_WINDOW);
 }
