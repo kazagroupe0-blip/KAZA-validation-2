@@ -4,6 +4,7 @@ import { ApiError, normalizeError } from '../supabase-api';
 import { requireUser } from '../require-user';
 import type { MomoProvider } from './account';
 import { BENIN_PHONE_RE, normalizeBeninPhone } from '../phone';
+import { resolveAuthIdentifier } from '../auth-identifier';
 
 /** Valide un numéro de téléphone béninois : +229 suivi de 10 chiffres. */
 function assertBeninPhone(phone: string): void {
@@ -13,11 +14,16 @@ function assertBeninPhone(phone: string): void {
   }
 }
 
-export async function signIn(email: string, password: string, captchaToken: string): Promise<void> {
+export async function signIn(identifier: string, password: string, captchaToken: string): Promise<void> {
+  const resolved = resolveAuthIdentifier(identifier);
+  if (!resolved) {
+    throw new ApiError(400, 'Saisissez un email ou un numéro de téléphone béninois valide.');
+  }
+
   const res = await fetch('/api/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, captchaToken }),
+    body: JSON.stringify({ identifier: resolved.value, password, captchaToken }),
   });
   const payload = (await res.json().catch(() => null)) as {
     error?: string;
@@ -155,6 +161,40 @@ export async function updatePassword(newPassword: string): Promise<void> {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new ApiError(400, error.message);
 }
+
+export async function requestPhoneChange(phone: string): Promise<void> {
+  const user = await requireUser();
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
+
+  const { error } = await supabase.auth.updateUser({ phone: normalizedPhone });
+  if (error) throw new ApiError(400, error.message);
+
+  if (!user.id) {
+    throw new ApiError(401, 'Session invalide — reconnectez-vous');
+  }
+}
+
+export async function verifyPhoneChange(phone: string, token: string): Promise<void> {
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
+
+  const { error } = await supabase.auth.verifyOtp({
+    phone: normalizedPhone,
+    token,
+    type: 'phone_change',
+  });
+  if (error) throw new ApiError(400, error.message);
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError) throw normalizeError(authError, 'Session invalide après vérification');
+  if (!authData.user || authData.user.phone !== normalizedPhone || !authData.user.phone_confirmed_at) {
+    throw new ApiError(409, 'Le numéro n’a pas été confirmé. Recommencez la vérification.');
+  }
+
+  await updateProfile({ phone: normalizedPhone });
+}
+
 
 export async function getMyProfile(): Promise<Profile | null> {
   const user = await requireUser().catch(() => null);
