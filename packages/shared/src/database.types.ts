@@ -303,6 +303,70 @@ export type Database = {
           },
         ]
       }
+      lease_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          landlord_id: string
+          residence_id: string
+          revoked_at: string | null
+          status: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          landlord_id: string
+          residence_id: string
+          revoked_at?: string | null
+          status?: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          landlord_id?: string
+          residence_id?: string
+          revoked_at?: string | null
+          status?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lease_invitations_accepted_by_fkey"
+            columns: ["accepted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lease_invitations_landlord_id_fkey"
+            columns: ["landlord_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lease_invitations_residence_id_fkey"
+            columns: ["residence_id"]
+            isOneToOne: false
+            referencedRelation: "residences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leases: {
         Row: {
           created_at: string
@@ -1074,6 +1138,7 @@ export type Database = {
         Returns: unknown
       }
       _st_within: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean }
+      accept_lease_invitation: { Args: { p_token: string }; Returns: Json }
       add_review: {
         Args: { p_comment?: string; p_rating: number; p_residence_id: string }
         Returns: undefined
@@ -1219,6 +1284,10 @@ export type Database = {
           p_tenant_id: string
         }
         Returns: string
+      }
+      create_lease_invitation: {
+        Args: { p_residence_id: string }
+        Returns: Json
       }
       decline_visit: {
         Args: { p_reason?: string; p_visit_id: string }
@@ -1370,6 +1439,7 @@ export type Database = {
         }[]
       }
       get_residence: { Args: { p_residence_id: string }; Returns: Json }
+      get_lease_invitation: { Args: { p_token: string }; Returns: Json }
       gettransactionid: { Args: never; Returns: unknown }
       increment_residence_views: { Args: { p_id: string }; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
@@ -1439,6 +1509,10 @@ export type Database = {
       list_my_conversations: { Args: never; Returns: Json }
       list_my_favorite_ids: { Args: never; Returns: string[] }
       list_my_favorites: { Args: never; Returns: Json }
+      list_my_lease_invitations: {
+        Args: { p_residence_id?: string }
+        Returns: Json
+      }
       list_my_leases: { Args: never; Returns: Json }
       list_my_payments: { Args: never; Returns: Json }
       list_my_receipts: { Args: never; Returns: Json }
@@ -1541,6 +1615,10 @@ export type Database = {
         Returns: undefined
       }
       residence_standing: { Args: { p_features: Json }; Returns: string }
+      revoke_lease_invitation: {
+        Args: { p_invitation_id: string }
+        Returns: undefined
+      }
       search_residences: {
         Args: {
           p_city?: string
