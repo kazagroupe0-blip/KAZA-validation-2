@@ -87,6 +87,11 @@ begin
   )
   returning id into v_id;
 
+  -- The owner UPDATE trigger protects direct client writes. The lease RPC has
+  -- already authenticated the landlord and validated the target tenant above,
+  -- so mark this single workflow transition as internal.
+  perform set_config('kaza.internal_residence_transition', '1', true);
+
   update public.residences
      set status = 'occupee'
    where id = p_residence_id;
