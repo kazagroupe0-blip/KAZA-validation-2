@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Landmark, Smartphone, Trash2, UserRound } from 'lucide-react';
-import { updateProfile, deleteMyAccount, listMyLandlordPayouts, ApiError, type MomoProvider } from '@/lib/supabase-api';
+import { updateProfile, requestPhoneChange, deleteMyAccount, listMyLandlordPayouts, ApiError, type MomoProvider } from '@/lib/supabase-api';
 import { useAuth } from '@/lib/auth-context';
 import type { LandlordPayout, Profile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Select } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase-client';
+import { BENIN_PHONE_RE, normalizeBeninPhone } from '@/lib/phone';
 import { useToast } from '@/components/ui/toast';
 
 const MOMO_OPTIONS = [
@@ -96,9 +97,28 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const updatedProfile = await updateProfile({
+      const desiredPhone = normalizeBeninPhone(phone);
+      if (desiredPhone && !BENIN_PHONE_RE.test(desiredPhone)) {
+        throw new ApiError(400, 'Numéro invalide — format attendu : +229 01 00 00 00 00');
+      }
+
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) {
+        throw new ApiError(401, 'Session invalide — reconnectez-vous');
+      }
+
+      const authPhone = normalizeBeninPhone(authData.user?.phone ?? '');
+      if (!desiredPhone && authPhone) {
+        throw new ApiError(
+          400,
+          'Le numéro utilisé pour la connexion ne peut pas être supprimé sans en vérifier un nouveau.',
+        );
+      }
+
+      const phoneNeedsVerification = desiredPhone !== authPhone;
+
+      const profilePatch = {
         full_name: fullName,
-        phone,
         ...(user?.role === 'bailleur'
           ? {
               business_name: businessName,
@@ -109,16 +129,41 @@ export default function ProfilePage() {
               bank_iban: bankIban,
             }
           : {}),
+      };
+
+      if (phoneNeedsVerification) {
+        if (!desiredPhone) {
+          throw new ApiError(400, 'Renseignez un numéro béninois avant de poursuivre.');
+        }
+
+        // Le numéro est d'abord enregistré dans Supabase Auth en attente.
+        // Le profil public ne recevra le nouveau numéro qu'après OTP phone_change.
+        await requestPhoneChange(desiredPhone);
+        const updatedProfile = await updateProfile(profilePatch);
+
+        setUserProfile(updatedProfile);
+        setSavedComplete(false);
+        window.dispatchEvent(new Event('kaza:notifications-refresh'));
+        toast.info(
+          'Vérification nécessaire',
+          'Un code SMS vient d’être envoyé. Validez-le pour activer la connexion par téléphone.',
+        );
+        router.push(
+          `/verify-phone?phone=${encodeURIComponent(desiredPhone)}&next=${encodeURIComponent('/profile')}`,
+        );
+        return;
+      }
+
+      const updatedProfile = await updateProfile({
+        ...profilePatch,
+        phone: desiredPhone || null,
       });
 
-      // La DB est la source de vérité de la complétude. updateProfile retourne
-      // la ligne effectivement persistée après ses triggers métier.
       setUserProfile(updatedProfile);
       setSavedComplete(
         updatedProfile.onboarding_completed === true ||
         missingLandlordFields(updatedProfile).length === 0,
       );
-      // L'état du contexte vient maintenant directement de la ligne sauvegardée.
       window.dispatchEvent(new Event('kaza:notifications-refresh'));
       toast.success(
         user?.role === 'bailleur' ? 'Profil enregistré' : 'Profil mis à jour',
