@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: res.status === 400 ? 400 : res.status });
     }
 
-    logger.info('login_success', { requestId, metadata: { email, duration_ms: Date.now() - start } });
+    logger.info('login_success', { requestId, metadata: { identifier: identifier.value, duration_ms: Date.now() - start } });
     return NextResponse.json({
       access_token: payload.access_token,
       refresh_token: payload.refresh_token,
