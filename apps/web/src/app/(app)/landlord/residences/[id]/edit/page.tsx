@@ -43,6 +43,7 @@ export default function EditResidencePage() {
   const [publishError, setPublishError] = useState<string | null>(null);
   const [leaseModal, setLeaseModal] = useState(false);
   const [tenants, setTenants] = useState<Profile[]>([]);
+  const [tenantLoadError, setTenantLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     getResidence(id)
@@ -57,8 +58,18 @@ export default function EditResidencePage() {
   }, [id, toast]);
 
   const loadTenants = useCallback(async () => {
-    const all = await listTenants().catch(() => []);
-    setTenants(all);
+    setTenantLoadError(null);
+    try {
+      const all = await listTenants();
+      setTenants(all);
+    } catch (err) {
+      setTenants([]);
+      setTenantLoadError(
+        err instanceof ApiError
+          ? err.message
+          : 'Impossible de charger les locataires liés à ce bailleur.',
+      );
+    }
   }, []);
 
   async function updateStatus(next: string) {
@@ -289,6 +300,17 @@ function CreateLeaseModal({
           ]}
           error={errors.tenant_id?.[0]}
         />
+        {tenantLoadError ? (
+          <p data-testid="tenant-load-error" className="rounded-kaza border border-kaza-danger/30 bg-kaza-danger/5 p-3 text-sm text-kaza-danger">
+            {tenantLoadError} Vous pouvez fermer puis rouvrir cette fenêtre pour réessayer.
+          </p>
+        ) : tenants.length === 0 ? (
+          <p data-testid="no-linked-tenants" className="rounded-kaza border border-kaza-border bg-kaza-bg p-3 text-sm leading-relaxed text-kaza-muted">
+            Aucun locataire lié à votre compte pour le moment. Pour protéger les coordonnées personnelles,
+            KAZA affiche ici uniquement les locataires avec lesquels vous avez déjà un bail ou une conversation.
+            Demandez au locataire de vous contacter depuis une annonce KAZA, puis revenez créer le bail.
+          </p>
+        ) : null
         <div className="grid gap-4 sm:grid-cols-3">
           <Input label="Début" type="date" required value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} />
           <Input label="Fin (facultatif)" type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} />
