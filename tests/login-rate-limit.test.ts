@@ -40,28 +40,28 @@ describe('checkRateLimit', () => {
 
 describe('checkLoginAttempts', () => {
   it('allows first attempt', () => {
-    expect(checkLoginAttempts({ identifier: 'a@b.c', ip: '1.2.3.4' }).allowed).toBe(true);
+    expect(checkLoginAttempts({ email: 'a@b.c', ip: '1.2.3.4' }).allowed).toBe(true);
   });
 
   it('locks after 5 attempts on the same email', () => {
-    for (let i = 1; i <= 5; i++) checkLoginAttempts({ identifier: 'victime@b.c', ip: '9.9.9.9' });
-    const blocked = checkLoginAttempts({ identifier: 'victime@b.c', ip: '9.9.9.9' });
+    for (let i = 1; i <= 5; i++) checkLoginAttempts({ email: 'victime@b.c', ip: '9.9.9.9' });
+    const blocked = checkLoginAttempts({ email: 'victime@b.c', ip: '9.9.9.9' });
     expect(blocked.allowed).toBe(false);
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
   });
 
   it('does not lock other emails from the same IP early', () => {
-    for (let i = 1; i <= 5; i++) checkLoginAttempts({ identifier: 'x@b.c', ip: '7.7.7.7' });
-    expect(checkLoginAttempts({ identifier: 'y@b.c', ip: '7.7.7.7' }).allowed).toBe(true);
+    for (let i = 1; i <= 5; i++) checkLoginAttempts({ email: 'x@b.c', ip: '7.7.7.7' });
+    expect(checkLoginAttempts({ email: 'y@b.c', ip: '7.7.7.7' }).allowed).toBe(true);
   });
 
   it('is case-insensitive on email', () => {
-    checkLoginAttempts({ identifier: 'A@B.C', ip: '1.1.1.1' });
-    checkLoginAttempts({ identifier: 'a@b.c', ip: '1.1.1.1' });
-    checkLoginAttempts({ identifier: 'A@b.c', ip: '1.1.1.1' });
-    checkLoginAttempts({ identifier: 'a@B.C', ip: '1.1.1.1' });
-    checkLoginAttempts({ identifier: 'A@B.c', ip: '1.1.1.1' });
-    const blocked = checkLoginAttempts({ identifier: 'a@b.c', ip: '1.1.1.1' });
+    checkLoginAttempts({ email: 'A@B.C', ip: '1.1.1.1' });
+    checkLoginAttempts({ email: 'a@b.c', ip: '1.1.1.1' });
+    checkLoginAttempts({ email: 'A@b.c', ip: '1.1.1.1' });
+    checkLoginAttempts({ email: 'a@B.C', ip: '1.1.1.1' });
+    checkLoginAttempts({ email: 'A@B.c', ip: '1.1.1.1' });
+    const blocked = checkLoginAttempts({ email: 'a@b.c', ip: '1.1.1.1' });
     expect(blocked.allowed).toBe(false);
   });
 });
