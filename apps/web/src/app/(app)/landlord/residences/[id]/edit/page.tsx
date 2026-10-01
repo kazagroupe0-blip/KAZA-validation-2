@@ -222,6 +222,7 @@ export default function EditResidencePage() {
         residence={residence}
         onLoadTenants={loadTenants}
         tenants={tenants}
+        tenantLoadError={tenantLoadError}
         onCreated={() => {
           setLeaseModal(false);
           setStatus('occupee');
@@ -238,6 +239,7 @@ function CreateLeaseModal({
   residence,
   tenants,
   onLoadTenants,
+  tenantLoadError,
   onCreated,
 }: Readonly<{
   open: boolean;
@@ -245,6 +247,7 @@ function CreateLeaseModal({
   residence: Residence;
   tenants: Profile[];
   onLoadTenants: () => Promise<void>;
+  tenantLoadError: string | null;
   onCreated: () => void;
 }>) {
   const toast = useToast();
@@ -310,7 +313,7 @@ function CreateLeaseModal({
             KAZA affiche ici uniquement les locataires avec lesquels vous avez déjà un bail ou une conversation.
             Demandez au locataire de vous contacter depuis une annonce KAZA, puis revenez créer le bail.
           </p>
-        ) : null
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-3">
           <Input label="Début" type="date" required value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} />
           <Input label="Fin (facultatif)" type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} />
