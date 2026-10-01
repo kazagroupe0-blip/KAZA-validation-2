@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,52 +9,104 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Phone } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
-import { isValidBeninPhone } from '@kaza/shared';
+import { isValidBeninPhoneNumber, normalizeBeninPhone } from '@/lib/phone';
 
-type Step = 'phone' | 'code';
+type Mode = 'signin' | 'signup';
 
 export default function VerifyOtpScreen() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>('phone');
-  const [phone, setPhone] = useState('+229 ');
+  const params = useLocalSearchParams<{ phone?: string; mode?: string }>();
+  const initialPhone = useMemo(
+    () => (params.phone ? normalizeBeninPhone(params.phone) : ''),
+    [params.phone],
+  );
+  const mode: Mode = params.mode === 'signup' ? 'signup' : 'signin';
+  const [step, setStep] = useState<'phone' | 'code'>(initialPhone ? 'code' : 'phone');
+  const [phone, setPhone] = useState(initialPhone || '+229 ');
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const inputs = useRef<(TextInput | null)[]>([]);
 
   const handleSendOtp = async () => {
-    const cleaned = phone.replace(/\s/g, '');
-    if (!isValidBeninPhone(cleaned)) {
+    const normalizedPhone = normalizeBeninPhone(phone);
+    if (!isValidBeninPhoneNumber(normalizedPhone)) {
       Alert.alert('Erreur', 'Numéro béninois invalide');
       return;
     }
+
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({ phone: cleaned });
-      if (error) { Alert.alert('Erreur', error.message); return; }
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalizedPhone,
+        options: { shouldCreateUser: false },
+      });
+      if (error) {
+        Alert.alert('Erreur', error.message);
+        return;
+      }
+      setPhone(normalizedPhone);
+      setCode(['', '', '', '', '', '']);
       setStep('code');
     } catch {
-      Alert.alert('Erreur', 'Impossible d\'envoyer le SMS');
+      Alert.alert('Erreur', 'Impossible d’envoyer le SMS');
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerify = async () => {
+    const normalizedPhone = normalizeBeninPhone(phone);
     const pin = code.join('');
-    if (pin.length !== 6) { Alert.alert('Erreur', 'Entrez le code à 6 chiffres'); return; }
+    if (!isValidBeninPhoneNumber(normalizedPhone)) {
+      Alert.alert('Erreur', 'Numéro béninois invalide');
+      return;
+    }
+    if (pin.length !== 6) {
+      Alert.alert('Erreur', 'Entrez le code à 6 chiffres');
+      return;
+    }
 
     setLoading(true);
     try {
       const { error } = await supabase.auth.verifyOtp({
-        phone: phone.replace(/\s/g, ''),
+        phone: normalizedPhone,
         token: pin,
         type: 'sms',
       });
-      if (error) { Alert.alert('Code invalide', error.message); return; }
-      router.replace('/');
+      if (error) {
+        Alert.alert('Code invalide', error.message);
+        return;
+      }
+
+      if (mode === 'signup') {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData.user) {
+          Alert.alert('Erreur', 'Votre compte a été vérifié, mais sa session n’a pas pu être chargée.');
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userData.user.id)
+          .single();
+
+        if (profileError || !profile) {
+          Alert.alert('Erreur', 'Votre profil KAZA n’a pas pu être chargé.');
+          return;
+        }
+
+        if (profile.role === 'bailleur') {
+          router.replace('/(auth)/onboarding');
+        } else {
+          router.replace('/');
+        }
+      } else {
+        router.replace('/');
+      }
     } catch {
       Alert.alert('Erreur', 'Vérification échouée');
     } finally {
@@ -63,10 +115,11 @@ export default function VerifyOtpScreen() {
   };
 
   const handleCodeChange = (text: string, index: number) => {
+    const digit = text.replace(/\D/g, '').slice(-1);
     const next = [...code];
-    next[index] = text;
+    next[index] = digit;
     setCode(next);
-    if (text && index < 5) inputs.current[index + 1]?.focus();
+    if (digit && index < 5) inputs.current[index + 1]?.focus();
   };
 
   const handleKeyPress = (key: string, index: number) => {
@@ -100,7 +153,7 @@ export default function VerifyOtpScreen() {
             />
           </View>
           <TouchableOpacity
-            onPress={handleSendOtp}
+            onPress={() => void handleSendOtp()}
             disabled={loading}
             className="bg-kaza-vert h-12 rounded-xl items-center justify-center"
           >
@@ -134,7 +187,7 @@ export default function VerifyOtpScreen() {
             ))}
           </View>
           <TouchableOpacity
-            onPress={handleVerify}
+            onPress={() => void handleVerify()}
             disabled={loading}
             className="bg-kaza-vert h-12 rounded-xl items-center justify-center"
           >
@@ -144,7 +197,7 @@ export default function VerifyOtpScreen() {
               <Text className="text-white font-semibold text-base">Vérifier</Text>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleSendOtp} className="mt-4 items-center">
+          <TouchableOpacity onPress={() => void handleSendOtp()} className="mt-4 items-center">
             <Text className="text-sm text-kaza-vert">Renvoyer le code</Text>
           </TouchableOpacity>
         </View>
