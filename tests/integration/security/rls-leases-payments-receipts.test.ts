@@ -75,6 +75,10 @@ describe('RLS: leases, payments, receipts tables', () => {
   async function createLease(landlord: any, tenant: any) {
     const residenceId = await createPublishedVerifiedResidence(landlord.user.id);
     await supabaseAdmin.rpc('admin_moderate_residence', { p_residence_id: residenceId, p_action: 'approve' });
+    const { error: linkError } = await getClient(tenant).rpc('open_conversation', {
+      p_residence_id: residenceId,
+    });
+    if (linkError) throw linkError;
     const { data, error } = await getClient(landlord).rpc('create_lease', {
       p_residence_id: residenceId,
       p_tenant_id: tenant.user.id,
