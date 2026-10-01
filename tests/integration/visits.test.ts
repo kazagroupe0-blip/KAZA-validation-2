@@ -87,7 +87,7 @@ describe('Visits: table & RLS', () => {
   }
 
   describe('INSERT policies', () => {
-    it('tenant CAN insert visit (proposed status)', async () => {
+    it('tenant CANNOT insert visit directly; proposal must use RPC', async () => {
       const clientTenant = getClient(tenant);
       const conversationId = await setupConversation();
 
@@ -107,11 +107,8 @@ describe('Visits: table & RLS', () => {
         .select()
         .single();
 
-      expect(error).toBeNull();
-      expect(data).toBeDefined();
-      expect(data?.conversation_id).toBe(conversationId);
-      expect(data?.proposed_by).toBe(tenant.user.id);
-      expect(data?.status).toBe('proposed');
+      expect(error).toBeDefined();
+      expect(data).toBeNull();
     });
   });
 
