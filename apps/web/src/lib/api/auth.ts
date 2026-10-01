@@ -3,17 +3,12 @@ import type { Profile } from '../types';
 import { ApiError, normalizeError } from '../supabase-api';
 import { requireUser } from '../require-user';
 import type { MomoProvider } from './account';
+import { BENIN_PHONE_RE, normalizeBeninPhone } from '../phone';
 
-/** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
-function normalizeBeninPhone(phone: string): string {
-  const cleaned = phone.replace(/\s+/g, '');
-  if (/^\d{10}$/.test(cleaned)) return `+229${cleaned}`;
-  return cleaned;
-}
-
+/** Valide un numéro de téléphone béninois : +229 suivi de 10 chiffres. */
 function assertBeninPhone(phone: string): void {
   const cleaned = normalizeBeninPhone(phone);
-  if (!/^\+229\d{10}$/.test(cleaned)) {
+  if (!BENIN_PHONE_RE.test(cleaned)) {
     throw new ApiError(400, 'Numéro invalide — format attendu : +229 01 00 00 00 00');
   }
 }
@@ -69,7 +64,8 @@ export async function signUp(
   },
   captchaToken: string,
 ): Promise<{ needsEmailConfirmation: boolean }> {
-  assertBeninPhone(input.phone);
+  const normalizedPhone = normalizeBeninPhone(input.phone);
+  assertBeninPhone(normalizedPhone);
   const MAX_RETRIES = 3;
   const BASE_DELAY_MS = 2000;
 
@@ -82,7 +78,7 @@ export async function signUp(
         emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: {
           full_name: input.full_name,
-          phone: input.phone,
+          phone: normalizedPhone,
           role: input.role,
           consent_apdp: input.consent_apdp,
         },
@@ -122,14 +118,20 @@ export async function signUp(
 }
 
 export async function requestOtp(phone: string, captchaToken: string): Promise<void> {
-  assertBeninPhone(phone);
-  const { error } = await supabase.auth.signInWithOtp({ phone, options: { captchaToken } });
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
+  const { error } = await supabase.auth.signInWithOtp({
+    phone: normalizedPhone,
+    options: { captchaToken },
+  });
   if (error) throw new ApiError(400, error.message);
 }
 
 export async function verifyOtp(phone: string, token: string, captchaToken: string): Promise<void> {
+  const normalizedPhone = normalizeBeninPhone(phone);
+  assertBeninPhone(normalizedPhone);
   const { error } = await supabase.auth.verifyOtp({
-    phone,
+    phone: normalizedPhone,
     token,
     type: 'sms',
     options: { captchaToken },
