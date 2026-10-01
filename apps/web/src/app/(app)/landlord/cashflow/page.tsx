@@ -11,9 +11,10 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toast';
 import { apiToast } from '@/lib/api-toast';
 import { cn } from '@/lib/cn';
+import { formatLocalMonthInput, monthInputToDate } from '@/lib/date-input';
 
 function formatMonthKey(month: string): string {
-  const d = new Date(month + '-01');
+  const d = new Date(month.length === 7 ? month + '-01' : month);
   return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 }
 
@@ -145,17 +146,14 @@ export default function CashflowPage() {
   const [from, setFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 11);
-    return d.toISOString().slice(0, 7) + '-01';
+    return formatLocalMonthInput(d);
   });
-  const [to, setTo] = useState(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 7) + '-01';
-  });
+  const [to, setTo] = useState(() => formatLocalMonthInput());
 
   const load = useCallback(async () => {
     try {
       setError(null);
-      const data = await getCashflow(from, to);
+      const data = await getCashflow(monthInputToDate(from), monthInputToDate(to));
       setCashflow(data);
     } catch (err) {
       apiToast(toast, err, 'Chargement du cash-flow impossible');
