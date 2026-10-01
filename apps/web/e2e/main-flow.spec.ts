@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { formatLocalDateInput } from '../src/lib/date-input';
 
 // note : parcours locataire complet. Les identifiants de test doivent exister
 // (seed : supabase/seed.sql) : locataire.demo@kaza.bj / bailleur.demo@kaza.bj
@@ -85,7 +86,7 @@ test.describe('Parcours principal locataire', () => {
     // (période 2026-07, signée par avance) ne compte pas comme preuve.
     const periodStart = new Date();
     periodStart.setDate(1);
-    const currentPeriod = periodStart.toISOString().slice(0, 10); // ex: 2026-09-01
+    const currentPeriod = formatLocalDateInput(periodStart); // ex: 2026-09-01
     await page.context().clearCookies();
     await page.goto('/login');
     await page.getByLabel('Email').fill(TENANT_EMAIL);

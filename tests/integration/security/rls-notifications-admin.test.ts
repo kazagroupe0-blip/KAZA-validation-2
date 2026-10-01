@@ -1,3 +1,5 @@
+import { formatLocalDate } from '../../helpers/local-date';
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { supabaseAnon, supabaseAdmin, createTestUser, signInTestUser, deleteTestUser, resetDatabase } from '../../helpers/supabase-test-client';
 import { createClient } from '@supabase/supabase-js';
@@ -66,7 +68,7 @@ describe('RLS: notifications & admin tables', () => {
     const { data, error } = await getClient(landlord).rpc('create_lease', {
       p_residence_id: residenceId,
       p_tenant_id: tenant.user.id,
-      p_start_date: new Date().toISOString().split('T')[0],
+      p_start_date: formatLocalDate(),
       p_monthly_rent: 100000,
       p_deposit: 200000,
     });

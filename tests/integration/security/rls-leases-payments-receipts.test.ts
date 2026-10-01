@@ -1,3 +1,5 @@
+import { formatLocalDate } from '../../helpers/local-date';
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { supabaseAnon, supabaseAdmin, createTestUser, signInTestUser, deleteTestUser, resetDatabase } from '../../helpers/supabase-test-client';
 import { createClient } from '@supabase/supabase-js';
@@ -75,7 +77,7 @@ describe('RLS: leases, payments, receipts tables', () => {
     const { data, error } = await getClient(landlord).rpc('create_lease', {
       p_residence_id: residenceId,
       p_tenant_id: tenant.user.id,
-      p_start_date: new Date().toISOString().split('T')[0],
+      p_start_date: formatLocalDate(),
       p_monthly_rent: 100000,
       p_deposit: 200000,
     });
@@ -171,7 +173,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       const { error } = await getClient(tenantA).rpc('create_lease', {
         p_residence_id: residenceId,
         p_tenant_id: tenantA.user.id,
-        p_start_date: new Date().toISOString().split('T')[0],
+        p_start_date: formatLocalDate(),
         p_monthly_rent: 100000,
       });
       expect(error).toBeDefined();
@@ -181,8 +183,8 @@ describe('RLS: leases, payments, receipts tables', () => {
   describe('payments SELECT', () => {
     it('tenant CAN see own payment', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(tenantA).from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeNull();
@@ -191,8 +193,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('landlord CAN see payment for their property', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(landlordA).from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeNull();
@@ -201,8 +203,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('tenant B CANNOT see tenant A payment', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(tenantB).from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeDefined();
@@ -211,8 +213,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('landlord B CANNOT see payment for landlord A property', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await getClient(landlordB).from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeDefined();
@@ -221,8 +223,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('anon CANNOT see any payment', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { data, error } = await supabaseAnon.from('payments').select('*').eq('id', paymentId).single();
       expect(error).toBeDefined();
@@ -233,16 +235,16 @@ describe('RLS: leases, payments, receipts tables', () => {
   describe('payments INSERT (cash payment)', () => {
     it('tenant CAN report cash payment for own lease', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       expect(paymentId).toBeDefined();
     });
 
     it('tenant CANNOT report payment for other tenant lease', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const { error } = await getClient(tenantB).rpc('report_cash_payment', {
         p_lease_id: leaseId,
         p_amount: 100000,
@@ -254,8 +256,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('tenant CANNOT inject amount mismatch (server validates)', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       // Try to report 1 FCFA on a 100000 FCFA/month lease
       const { error } = await getClient(tenantA).rpc('report_cash_payment', {
         p_lease_id: leaseId,
@@ -269,8 +271,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('tenant CANNOT inject confirmed status directly', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const { error } = await getClient(tenantA).from('payments').insert({
         lease_id: leaseId,
         tenant_id: tenantA.user.id,
@@ -289,8 +291,8 @@ describe('RLS: leases, payments, receipts tables', () => {
   describe('payments UPDATE', () => {
     it('tenant CANNOT confirm own payment', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { error } = await getClient(tenantA).from('payments').update({ status: 'confirmed' }).eq('id', paymentId);
       expect(error).toBeDefined();
@@ -298,8 +300,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('landlord CANNOT confirm payment via direct update (RLS blocks)', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { error } = await getClient(landlordA).from('payments').update({ status: 'confirmed' }).eq('id', paymentId);
       // Should be blocked - landlord can only confirm via direct UPDATE with proper fields
@@ -310,8 +312,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('landlord CAN confirm payment via direct UPDATE (app pattern)', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { error } = await getClient(landlordA)
         .from('payments')
@@ -329,8 +331,8 @@ describe('RLS: leases, payments, receipts tables', () => {
   describe('receipts SELECT', () => {
     it('tenant CAN see own receipt', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       // Confirm payment via direct UPDATE (app pattern)
       await getClient(landlordA)
@@ -352,8 +354,8 @@ describe('RLS: leases, payments, receipts tables', () => {
 
     it('tenant B CANNOT see tenant A receipt', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
-      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
+      const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       await getClient(landlordA)
         .from('payments')

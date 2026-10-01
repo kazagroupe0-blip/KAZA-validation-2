@@ -1,3 +1,5 @@
+import { formatLocalDate } from '../../helpers/local-date';
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -65,7 +67,7 @@ describe('Landlord payouts', () => {
       .single();
     if (residenceError) throw residenceError;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate();
     const { data: lease, error: leaseError } = await supabaseAdmin
       .from('leases')
       .insert({
@@ -153,7 +155,7 @@ describe('Landlord payouts', () => {
       .single();
     if (residenceError) throw residenceError;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate();
     const { data: lease, error: leaseError } = await supabaseAdmin
       .from('leases')
       .insert({
@@ -312,7 +314,7 @@ describe('Landlord payouts', () => {
       .single();
     if (residenceError) throw residenceError;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate();
     const { data: lease, error: leaseError } = await supabaseAdmin
       .from('leases')
       .insert({

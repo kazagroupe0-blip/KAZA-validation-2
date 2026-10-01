@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { listExpenses, createExpense, updateExpense, deleteExpense, listMyResidences } from '@/lib/supabase-api';
 import type { ResidenceWithRelations } from '@/lib/types';
 import { useToast } from '@/components/ui/toast';
+import { formatLocalDateInput } from '@/lib/date-input';
 
 export default function LandlordExpensesPage() {
   const { error: toastError, success: toastSuccess } = useToast();
@@ -40,7 +41,7 @@ export default function LandlordExpensesPage() {
   const [form, setForm] = useState<ExpenseFormValues>({
     category: 'travaux',
     amount: 0,
-    date: new Date().toISOString().slice(0, 10),
+    date: formatLocalDateInput(),
     residence_id: undefined,
     description: undefined,
   });
@@ -87,7 +88,7 @@ export default function LandlordExpensesPage() {
     setForm({
       category: 'travaux',
       amount: 0,
-      date: new Date().toISOString().slice(0, 10),
+      date: formatLocalDateInput(),
       residence_id: undefined,
       description: undefined,
     });
@@ -101,7 +102,7 @@ export default function LandlordExpensesPage() {
       toastError('Le montant doit être supérieur à 0', 'Erreur');
       return;
     }
-    if (form.date > new Date().toISOString().slice(0, 10)) {
+    if (form.date > formatLocalDateInput()) {
       toastError('La date ne peut pas être dans le futur', 'Erreur');
       return;
     }
@@ -144,7 +145,7 @@ export default function LandlordExpensesPage() {
       toastError('Le montant doit être supérieur à 0', 'Erreur');
       return;
     }
-    if (form.date > new Date().toISOString().slice(0, 10)) {
+    if (form.date > formatLocalDateInput()) {
       toastError('La date ne peut pas être dans le futur', 'Erreur');
       return;
     }

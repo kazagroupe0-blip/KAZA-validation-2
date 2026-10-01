@@ -1,3 +1,5 @@
+import { formatLocalDate } from '../../helpers/local-date';
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { supabaseAnon, supabaseAdmin, createTestUser, signInTestUser, deleteTestUser, resetDatabase } from '../../helpers/supabase-test-client';
 import { createClient } from '@supabase/supabase-js';
@@ -69,7 +71,7 @@ describe('Payment concurrency & idempotence', () => {
     const { data, error } = await getClient(landlord).rpc('create_lease', {
       p_residence_id: residenceId,
       p_tenant_id: tenant.user.id,
-      p_start_date: new Date().toISOString().split('T')[0],
+      p_start_date: formatLocalDate(),
       p_monthly_rent: 100000,
       p_deposit: 200000,
     });
@@ -112,7 +114,7 @@ describe('Payment concurrency & idempotence', () => {
   describe('Cash payment idempotence', () => {
     it('duplicate report_cash_payment calls with same lease+period are rejected', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
       // First call - should succeed
@@ -138,7 +140,7 @@ describe('Payment concurrency & idempotence', () => {
 
     it('concurrent cash payment reports for same lease create at most one', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
       // Fire 5 concurrent requests
@@ -166,7 +168,7 @@ describe('Payment concurrency & idempotence', () => {
   describe('Payment confirmation idempotence', () => {
     it('double confirmation on same payment is idempotent', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
@@ -204,7 +206,7 @@ describe('Payment concurrency & idempotence', () => {
 
     it('confirm then reject on same payment fails appropriately', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
-      const periodStart = new Date().toISOString().split('T')[0];
+      const periodStart = formatLocalDate();
       const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);

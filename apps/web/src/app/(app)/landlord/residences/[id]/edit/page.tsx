@@ -14,6 +14,7 @@ import {
 } from '@/lib/supabase-api';
 import type { Profile, Residence } from '@/lib/types';
 import { formatXof } from '@/lib/format';
+import { formatLocalDateInput } from '@/lib/date-input';
 import { ResidenceForm } from '@/components/property/residence-form';
 import { residenceCompleteness, CompletenessChecklist } from '@/components/property/residence-completeness';
 import { Button } from '@/components/ui/button';
@@ -247,7 +248,7 @@ function CreateLeaseModal({
         ...f,
         monthly_rent: String(residence.price_monthly),
         deposit: String(residence.deposit),
-        start_date: new Date().toISOString().slice(0, 10),
+        start_date: formatLocalDateInput(),
       }));
     }
   }, [open, tenants.length, onLoadTenants, residence]);
