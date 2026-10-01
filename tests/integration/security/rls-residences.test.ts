@@ -591,6 +591,36 @@ describe('RLS: residences table', () => {
     });
   });
 
+  describe('withdrawal workflow', () => {
+    it('landlord can withdraw an approved residence back to a coherent draft state', async () => {
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: true,
+        is_verified: true,
+        moderation_status: 'approved',
+        status: 'libre',
+      });
+
+      const { error } = await getClient(landlordA).rpc('withdraw_residence_publication', {
+        p_residence_id: residenceId,
+      });
+
+      expect(error).toBeNull();
+
+      const { data, error: readError } = await getClient(landlordA)
+        .from('residences')
+        .select('is_published, is_verified, moderation_status')
+        .eq('id', residenceId)
+        .single();
+
+      expect(readError).toBeNull();
+      expect(data).toMatchObject({
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'draft',
+      });
+    });
+  });
+
   describe('public search bounds', () => {
     it('rejects partial coordinates', async () => {
       const { data, error } = await supabaseAnon.rpc('search_residences', {
