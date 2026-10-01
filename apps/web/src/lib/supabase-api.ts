@@ -7,6 +7,7 @@
 import { supabase } from './supabase-client';
 import { env } from './env';
 import { withRetry } from './retry';
+import { BENIN_PHONE_RE, normalizeBeninPhone } from './phone';
 
 export class ApiError extends Error {
   status: number;
@@ -31,10 +32,10 @@ export class ApiError extends Error {
   }
 }
 
-/** Valide un numéro de téléphone bénin : +229 suivi de 10 chiffres. */
+/** Valide un numéro de téléphone béninois : +229 suivi de 10 chiffres. */
 export function assertBeninPhone(phone: string): void {
-  const cleaned = phone.replace(/\s+/g, '');
-  if (!/^\+229\d{10}$/.test(cleaned)) {
+  const cleaned = normalizeBeninPhone(phone);
+  if (!BENIN_PHONE_RE.test(cleaned)) {
     throw new ApiError(400, 'Numéro invalide — format attendu : +229 01 00 00 00 00');
   }
 }
