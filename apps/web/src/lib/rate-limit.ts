@@ -63,21 +63,21 @@ function memoryCheckLimit(
   return { allowed: true, retryAfterSeconds: 0, remaining: limit - bucket.count, reset: bucket.resetAt };
 }
 
-const EMAIL_LIMIT = 5;
-const EMAIL_WINDOW = 60;
+const IDENTIFIER_LIMIT = 5;
+const IDENTIFIER_WINDOW = 60;
 const IP_LIMIT = 20;
 const IP_WINDOW = 60;
 
 export async function checkLoginAttempts(opts: { identifier: string; ip: string }): Promise<RateLimitResult> {
   const rl = getRatelimit();
   if (rl) {
-    const byEmail = await rl.limit(`login:identifier:${opts.identifier.toLowerCase()}`);
-    if (!byEmail.success) {
+    const byIdentifier = await rl.limit(`login:identifier:${opts.identifier.toLowerCase()}`);
+    if (!byIdentifier.success) {
       return {
         allowed: false,
-        retryAfterSeconds: Math.max(1, Math.ceil((byEmail.reset - Date.now()) / 1000)),
-        remaining: byEmail.remaining,
-        reset: byEmail.reset,
+        retryAfterSeconds: Math.max(1, Math.ceil((byIdentifier.reset - Date.now()) / 1000)),
+        remaining: byIdentifier.remaining,
+        reset: byIdentifier.reset,
       };
     }
     const byIp = await rl.limit(`login:ip:${opts.ip}`);
@@ -92,12 +92,12 @@ export async function checkLoginAttempts(opts: { identifier: string; ip: string 
     return {
       allowed: true,
       retryAfterSeconds: 0,
-      remaining: Math.min(byEmail.remaining, byIp.remaining),
-      reset: Math.max(byEmail.reset, byIp.reset),
+      remaining: Math.min(byIdentifier.remaining, byIp.remaining),
+      reset: Math.max(byIdentifier.reset, byIp.reset),
     };
   }
-  const be = memoryCheckLimit(`login:identifier:${opts.identifier.toLowerCase()}`, EMAIL_LIMIT, EMAIL_WINDOW);
-  if (!be.allowed) return be;
+  const bi = memoryCheckLimit(`login:identifier:${opts.identifier.toLowerCase()}`, EMAIL_LIMIT, IDENTIFIER_WINDOW);
+  if (!bi.allowed) return bi;
   return memoryCheckLimit(`login:ip:${opts.ip}`, IP_LIMIT, IP_WINDOW);
 }
 
