@@ -48,8 +48,8 @@ describe('RLS: residences table', () => {
     return clients[user.token];
   }
 
-  async function createResidenceDirect(ownerId: string, overrides = {}) {
-    const { data, error } = await supabaseAdmin.from('residences').insert({
+  async function createResidenceDirect(ownerId: string, overrides: Record<string, unknown> = {}) {
+    const row: Record<string, unknown> = {
       owner_id: ownerId,
       title: `Test Residence ${Date.now()}`,
       description: 'Test description',
@@ -63,7 +63,18 @@ describe('RLS: residences table', () => {
       is_published: true,
       is_verified: true,
       ...overrides,
-    }).select('id').single();
+    };
+
+    if (!('moderation_status' in overrides)) {
+      row.moderation_status =
+        row.is_published === true && row.is_verified === true
+          ? 'approved'
+          : row.is_published === true && row.is_verified === false
+            ? 'pending'
+            : 'draft';
+    }
+
+    const { data, error } = await supabaseAdmin.from('residences').insert(row).select('id').single();
     if (error) throw error;
     return data.id;
   }
