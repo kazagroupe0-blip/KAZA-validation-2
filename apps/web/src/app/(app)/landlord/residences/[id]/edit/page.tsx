@@ -410,6 +410,10 @@ function InviteTenantModal({
               <Button type="button" variant="secondary" loading={revoking} onClick={() => void handleRevoke()} className="mt-4">
                 Révoquer ce lien
               </Button>
+            ) : active.status === 'accepted' ? (
+              <Button type="button" variant="secondary" loading={revoking} onClick={() => void handleRevoke()} className="mt-4">
+                Annuler le rattachement
+              </Button>
             ) : null}
           </div>
         ) : null}
