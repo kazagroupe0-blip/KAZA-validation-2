@@ -140,6 +140,10 @@ begin
 end;
 $function$;
 
+-- Reassert the security boundary after the helper function has been created.
+revoke execute on function public.residences_guard_delete()
+from public, anon, authenticated;
+
 drop trigger if exists residences_before_insert_guard on public.residences;
 create trigger residences_before_insert_guard
 before insert on public.residences
