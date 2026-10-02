@@ -17,7 +17,6 @@
     "@supabase/supabase-js": "2.116.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
-    "@vercel/og": "^1.0.1",
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.4.0",
     "framer-motion": "^11.15.0",
