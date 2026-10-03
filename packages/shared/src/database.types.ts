@@ -1438,8 +1438,8 @@ export type Database = {
           tax_id: string
         }[]
       }
-      get_residence: { Args: { p_residence_id: string }; Returns: Json }
       get_lease_invitation: { Args: { p_token: string }; Returns: Json }
+      get_residence: { Args: { p_residence_id: string }; Returns: Json }
       gettransactionid: { Args: never; Returns: unknown }
       increment_residence_views: { Args: { p_id: string }; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
