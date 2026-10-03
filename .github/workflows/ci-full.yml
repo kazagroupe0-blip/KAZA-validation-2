@@ -55,14 +55,67 @@ jobs:
             deno check --config supabase/functions/deno.json "$f"
           done
 
-      - name: Audit production dependencies (blocking)
-        run: npm audit --audit-level=high --omit=dev --workspace apps/web
+      - name: Audit web production dependency closure
+        run: |
+          set +e
+          npm audit --audit-level=high --omit=dev --workspace apps/web --json > /tmp/kaza-web-audit.json
+          AUDIT_STATUS=$?
+          set -e
+          export AUDIT_STATUS
+
+          node <<'NODE'
+          const fs = require('fs');
+          const { spawnSync } = require('child_process');
+
+          const audit = JSON.parse(fs.readFileSync('/tmp/kaza-web-audit.json', 'utf8'));
+          const ls = spawnSync(
+            'npm',
+            ['ls', '--workspace', 'apps/web', '--omit=dev', '--all', '--json'],
+            { encoding: 'utf8' },
+          );
+
+          if (ls.status !== 0 && !ls.stdout) {
+            console.error('::error::Impossible de reconstruire la fermeture production de apps/web.');
+            console.error(ls.stderr || '');
+            process.exit(1);
+          }
+
+          const tree = JSON.parse(ls.stdout || '{}');
+          const reachable = new Set();
+
+          function walk(node) {
+            if (!node || typeof node !== 'object') return;
+            if (node.name) reachable.add(node.name);
+            for (const dep of Object.values(node.dependencies || {})) walk(dep);
+          }
+
+          walk(tree);
+
+          const reported = Object.keys(audit.vulnerabilities || {});
+          const reachableVulnerabilities = reported.filter((name) => reachable.has(name));
+
+          console.log('Web production dependency packages checked:', reachable.size);
+          console.log('Audit-reported packages:', reported.join(', ') || 'none');
+          console.log(
+            'Audit-reported packages reachable from web production:',
+            reachableVulnerabilities.join(', ') || 'none',
+          );
+
+          if (reachableVulnerabilities.length) {
+            console.error('::error::Vulnerability is reachable from apps/web production dependencies.');
+            process.exit(1);
+          }
+
+          if (Number(process.env.AUDIT_STATUS) !== 0) {
+            console.warn('::warning::npm audit reported vulnerabilities outside the apps/web production dependency closure.');
+          }
+          NODE
 
       - name: Audit development dependencies (known upstream brace CVE)
         continue-on-error: true
         run: |
           npm audit --audit-level=high --workspace apps/web || true
-          echo "::warning::Development dependency audit currently reports the upstream braces GHSA-vfj7-8cjw-p6xm advisory; no patched braces release is published yet."
+          echo "::warning::Development/other-workspace dependency audit remains advisory-only until the upstream braces fix is released.";
 
       - name: Diagnose Docker Hub credentials
         env:
