@@ -1,6 +1,15 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+@utility touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@utility touch-target-sm {
+  min-height: 40px;
+  min-width: 40px;
+}
 
 /* ============================================================
    KAZA — surface de base (charte graphique v1, fond clair)
@@ -70,16 +79,7 @@
   }
 }
 
-/* Touch target minimum 44x44px for accessibility */
 @layer utilities {
-  .touch-target {
-    @apply min-h-[44px] min-w-[44px];
-  }
-  
-  .touch-target-sm {
-    @apply min-h-[40px] min-w-[40px];
-  }
-  
   /* Fluid typography using clamp */
   .text-fluid-xs {
     font-size: clamp(0.7rem, 0.65rem + 0.25vw, 0.75rem);
@@ -107,7 +107,7 @@
   .container-query {
     container-type: inline-size;
   }
-  
+
   @container (max-width: 640px) {
     .cq-sm\:hidden { display: none; }
     .cq-sm\:block { display: block; }
@@ -119,11 +119,11 @@
     .cq-sm\:text-center { text-align: center; }
     .cq-sm\:px-4 { padding-left: 1rem; padding-right: 1rem; }
   }
-  
+
   @container (min-width: 641px) and (max-width: 1024px) {
     .cq-md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
-  
+
   @container (min-width: 1025px) {
     .cq-lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .cq-lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -140,12 +140,15 @@
   .kaza-input {
     @apply w-full rounded-kaza bg-white border border-kaza-border px-4 py-2.5 text-sm text-kaza-text
       placeholder:text-kaza-faint transition-colors duration-150
-      focus:border-kaza-brand focus:brand-ring outline-none;
+      focus:border-kaza-brand outline-none;
+    &:focus {
+      box-shadow: 0 0 0 1px rgba(14, 71, 40, 0.3), 0 0 0 4px rgba(14, 71, 40, 0.12);
+    }
   }
   .kaza-label {
     @apply block text-xs font-medium text-kaza-muted mb-1.5 tracking-wide;
   }
-  
+
   /* Responsive button sizes */
   .btn-responsive {
     @apply touch-target py-2.5 px-4 text-sm font-medium;
@@ -234,12 +237,12 @@
 /* Prevent horizontal scroll on mobile */
 @media (max-width: 640px) {
   html, body { overflow-x: hidden; }
-  
+
   /* Improve tap targets on mobile */
   button, a, input, select, textarea, [role="button"] {
     -webkit-tap-highlight-color: rgba(14, 71, 40, 0.2);
   }
-  
+
   /* Better text wrapping on narrow screens */
   .truncate-mobile { overflow-wrap: anywhere; word-break: break-word; }
 }
