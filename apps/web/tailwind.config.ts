@@ -1,5 +1,4 @@
 import type { Config } from 'tailwindcss';
-import type { PluginAPI } from 'tailwindcss/types/config';
 
 // ============================================================
 // KAZA Design Tokens — charte graphique v1 (fond clair)
@@ -63,18 +62,6 @@ const config: Config = {
       },
     },
   },
-  plugins: [
-    // note : utilitaires custom pour le design system Kaza
-    function ({ addUtilities }: PluginAPI) {
-      addUtilities({
-        '.tabular-nums': { 'font-variant-numeric': 'tabular-nums' },
-        '.text-balance': { 'text-wrap': 'balance' },
-        '.brand-ring': {
-          'box-shadow': '0 0 0 1px rgba(14, 71, 40, 0.3), 0 0 0 4px rgba(14, 71, 40, 0.12)',
-        },
-      });
-    },
-  ],
 };
 
 export default config;
