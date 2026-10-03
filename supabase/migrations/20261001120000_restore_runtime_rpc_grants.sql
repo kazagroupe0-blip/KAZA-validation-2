@@ -11,4 +11,4 @@ revoke execute on function public.get_residence(uuid) from public;
 grant execute on function public.get_residence(uuid) to anon, authenticated, service_role;
 
 revoke execute on function public.agree_visit(uuid, boolean, text) from public;
-grant execute on function public.agree_visit(uuid, boolean, service_role);
+grant execute on function public.agree_visit(uuid, boolean, text) to service_role;
