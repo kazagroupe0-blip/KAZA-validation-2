@@ -1426,6 +1426,7 @@ export type Database = {
         Returns: boolean
       }
       geomfromewkt: { Args: { "": string }; Returns: unknown }
+      get_lease_invitation: { Args: { p_token: string }; Returns: Json }
       get_my_billing: {
         Args: never
         Returns: {
@@ -1438,7 +1439,6 @@ export type Database = {
           tax_id: string
         }[]
       }
-      get_lease_invitation: { Args: { p_token: string }; Returns: Json }
       get_residence: { Args: { p_residence_id: string }; Returns: Json }
       gettransactionid: { Args: never; Returns: unknown }
       increment_residence_views: { Args: { p_id: string }; Returns: undefined }
