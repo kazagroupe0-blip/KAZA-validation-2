@@ -327,10 +327,8 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
       const { error } = await getClient(landlordA).from('payments').update({ status: 'confirmed' }).eq('id', paymentId);
-      // Should be blocked - landlord can only confirm via direct UPDATE with proper fields
-      // But RLS policy payments_update_landlord should allow landlord to update their property's payments
-      // Let's check if the update succeeds (it should with proper RLS)
-      // The test expectation depends on the actual RLS policy
+      // Direct table mutation is forbidden after the F01 boundary hardening.
+      expect(error).toBeDefined();
     });
 
     it('landlord CAN confirm payment via direct UPDATE (app pattern)', async () => {
@@ -338,15 +336,9 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = formatLocalDate();
       const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      const { error } = await getClient(landlordA)
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString(),
-          confirmed_by: landlordA.user.id,
-        })
-        .eq('id', paymentId);
-      // App uses direct UPDATE for confirmation (payments.ts:61-73)
+      const { error } = await getClient(landlordA).rpc('confirm_payment', {
+        p_payment_id: paymentId,
+      });
       expect(error).toBeNull();
     });
   });
@@ -357,15 +349,10 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = formatLocalDate();
       const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      // Confirm payment via direct UPDATE (app pattern)
-      await getClient(landlordA)
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString(),
-          confirmed_by: landlordA.user.id,
-        })
-        .eq('id', paymentId);
+      const { error: confirmError } = await getClient(landlordA).rpc('confirm_payment', {
+        p_payment_id: paymentId,
+      });
+      expect(confirmError).toBeNull();
       // Receipt auto-created by trigger
       const { data: receipts } = await getClient(tenantA).from('receipts').select('*').eq('payment_id', paymentId);
       if (receipts && receipts.length > 0) {
@@ -380,14 +367,10 @@ describe('RLS: leases, payments, receipts tables', () => {
       const periodStart = formatLocalDate();
       const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
-      await getClient(landlordA)
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString(),
-          confirmed_by: landlordA.user.id,
-        })
-        .eq('id', paymentId);
+      const { error: confirmError } = await getClient(landlordA).rpc('confirm_payment', {
+        p_payment_id: paymentId,
+      });
+      expect(confirmError).toBeNull();
       const { data: receipts } = await getClient(tenantA).from('receipts').select('*').eq('payment_id', paymentId);
       if (receipts && receipts.length > 0) {
         const { data, error } = await getClient(tenantB).from('receipts').select('*').eq('id', receipts[0].id).single();
