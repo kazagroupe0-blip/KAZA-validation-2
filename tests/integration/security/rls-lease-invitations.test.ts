@@ -57,7 +57,7 @@ describe('Security: targeted lease invitations', () => {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         auth: { autoRefreshToken: false, persistSession: false },
-        global: { headers: { Authorization: `Bearer ${token}` } },
+        accessToken: async () => token,
       },
     );
   }
