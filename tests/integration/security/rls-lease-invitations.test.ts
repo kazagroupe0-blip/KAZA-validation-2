@@ -46,17 +46,20 @@ describe('Security: targeted lease invitations', () => {
     }
   });
 
-  const clients: Record<string, any> = {};
-
   function getClient(user: any) {
-    if (!clients[user.token]) {
-      clients[user.token] = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        { global: { headers: { Authorization: `Bearer ${user.token}` } } },
-      );
+    const token = user?.token;
+    if (typeof token !== 'string' || token.length < 20) {
+      throw new Error('Missing authenticated test access token');
     }
-    return clients[user.token];
+
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      },
+    );
   }
 
   async function createResidence(ownerId: string): Promise<string> {
