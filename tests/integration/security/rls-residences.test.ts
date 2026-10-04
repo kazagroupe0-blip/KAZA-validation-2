@@ -73,11 +73,12 @@ describe('RLS: residences table', () => {
         if (!('is_published' in overrides)) row.is_published = false;
         if (!('is_verified' in overrides)) row.is_verified = false;
       }
+    } else if (row.is_published === true && row.is_verified === true) {
+      row.moderation_status = 'approved';
     } else {
-      row.moderation_status =
-        row.is_published === true && row.is_verified === true
-          ? 'approved'
-          : 'draft';
+      row.is_published = false;
+      row.is_verified = false;
+      row.moderation_status = 'draft';
     }
 
     const { data, error } = await supabaseAdmin.from('residences').insert(row).select('id').single();
@@ -119,7 +120,11 @@ describe('RLS: residences table', () => {
     });
 
     it('unverified residence is NOT visible to tenant', async () => {
-      const residenceId = await createResidenceDirect(landlordA.user.id, { is_published: true, is_verified: false });
+      const residenceId = await createResidenceDirect(landlordA.user.id, {
+        is_published: false,
+        is_verified: false,
+        moderation_status: 'pending',
+      });
       const clientTenant = getClient(tenantA);
       const { data, error } = await clientTenant.from('residences').select('*').eq('id', residenceId).single();
       expect(error).toBeDefined();
