@@ -65,13 +65,19 @@ describe('RLS: residences table', () => {
       ...overrides,
     };
 
-    if (!('moderation_status' in overrides)) {
+    if ('moderation_status' in overrides) {
+      if (row.moderation_status === 'approved') {
+        if (!('is_published' in overrides)) row.is_published = true;
+        if (!('is_verified' in overrides)) row.is_verified = true;
+      } else {
+        if (!('is_published' in overrides)) row.is_published = false;
+        if (!('is_verified' in overrides)) row.is_verified = false;
+      }
+    } else {
       row.moderation_status =
         row.is_published === true && row.is_verified === true
           ? 'approved'
-          : row.is_published === true && row.is_verified === false
-            ? 'pending'
-            : 'draft';
+          : 'draft';
     }
 
     const { data, error } = await supabaseAdmin.from('residences').insert(row).select('id').single();
@@ -83,6 +89,8 @@ describe('RLS: residences table', () => {
     it('published & verified residence is visible to an authenticated tenant', async () => {
       const residenceId = await createResidenceDirect(landlordA.user.id, {
         moderation_status: 'pending',
+        is_published: false,
+        is_verified: false,
         status: 'libre',
       });
       // The moderation RPC accepts only residences explicitly waiting for review.
