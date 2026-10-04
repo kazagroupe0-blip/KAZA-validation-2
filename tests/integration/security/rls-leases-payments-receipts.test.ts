@@ -331,7 +331,7 @@ describe('RLS: leases, payments, receipts tables', () => {
       expect(error).toBeDefined();
     });
 
-    it('landlord CAN confirm payment via direct UPDATE (app pattern)', async () => {
+    it('landlord CAN confirm payment via secured RPC', async () => {
       const { leaseId } = await createLease(landlordA, tenantA);
       const periodStart = formatLocalDate();
       const periodEnd = formatLocalDate(new Date(Date.now() + 30 * 86400000));
