@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, Landmark, Smartphone, Trash2, UserRound } from 'lucide-react';
 import { updateProfile, deleteMyAccount, listMyLandlordPayouts, ApiError, type MomoProvider } from '@/lib/supabase-api';
@@ -55,8 +55,14 @@ export default function ProfilePage() {
   const [savedComplete, setSavedComplete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const initializedUserId = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!user) return;
+    if (!user || initializedUserId.current === user.id) return;
+    // note : le contexte d'auth peut rafraîchir l'objet profile après une action
+    // réussie. Ne jamais recopier ce snapshot dans le formulaire d'une saisie
+    // déjà en cours, sinon un refresh concurrent peut effacer les champs locaux.
+    initializedUserId.current = user.id;
     setFullName(user.full_name ?? '');
     setPhone(user.phone ?? '');
     setBusinessName(user.business_name ?? '');

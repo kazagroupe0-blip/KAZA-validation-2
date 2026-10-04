@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from './supabase-client';
 import type { Profile, Role } from './types';
 import { getMyProfile } from './supabase-api';
+import { logger } from './logger';
 
 export interface AuthState {
   loading: boolean;
@@ -32,12 +33,18 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       return;
     }
     try {
-      // note : le profil (rôle) vient de la table profiles — source de vérité unique
+      // note : le profil (rôle) vient de la table profiles — source de vérité unique.
+      // getUser() vient de confirmer un JWT valide ; une panne de lecture de profiles
+      // ne doit donc pas être transformée en déconnexion artificielle.
       const me = await getMyProfile();
       setProfile(me);
-    } catch {
-      await supabase.auth.signOut();
-      setProfile(null);
+    } catch (error) {
+      logger.error('auth_profile_load_failed', {
+        error: error instanceof Error ? error : String(error),
+        message: 'Impossible de charger le profil après authentification',
+      });
+      // Conserver le dernier profil connu pendant une panne transitoire du backend.
+      // Lors du chargement initial, profile est déjà null et la session reste intacte.
     } finally {
       setLoading(false);
     }

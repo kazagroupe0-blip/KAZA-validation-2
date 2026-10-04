@@ -15,6 +15,8 @@ import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { timeAgo } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
 import { cn } from '@/lib/cn';
+import { apiToast } from '@/lib/api-toast';
+import { useToast } from '@/components/ui/toast';
 
 const TYPE_ICONS: Record<string, string> = {
   payment: '💵',
@@ -37,6 +39,7 @@ function targetFrom(n: AppNotification): string | null {
 
 export function NotificationBell() {
   const { user } = useAuth();
+  const toast = useToast();
   const router = useRouter();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -57,11 +60,12 @@ export function NotificationBell() {
     let mounted = true;
 
     const load = async () => {
-      const [list, count] = await Promise.all([
-        listNotifications(30),
-        unreadNotificationsCount(),
-      ]);
-      if (!mounted) return;
+      try {
+        const [list, count] = await Promise.all([
+          listNotifications(30),
+          unreadNotificationsCount(),
+        ]);
+        if (!mounted) return;
 
       // Un INSERT Realtime peut arriver pendant le chargement HTTP initial.
       // Ne jamais écraser cet événement local avec une réponse plus ancienne.
@@ -80,8 +84,11 @@ export function NotificationBell() {
         .filter((item) => !fetchedIds.has(item.id) && !item.read_at && !item.resolved_at)
         .length;
 
-      setItems(merged);
-      setUnread(count + liveUnreadNotFetched);
+        setItems(merged);
+        setUnread(count + liveUnreadNotFetched);
+      } catch (err) {
+        if (mounted) apiToast(toast, err, 'Chargement des notifications impossible');
+      }
     };
     void load();
 
@@ -151,7 +158,7 @@ export function NotificationBell() {
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [toast, user?.id]);
 
   // Fermeture au clic extérieur + Échap.
   useEffect(() => {
@@ -173,15 +180,23 @@ export function NotificationBell() {
   }, [open]);
 
   async function markAllRead() {
-    await markAllNotificationsRead();
-    setItems((prev) => prev.map((n) => ({ ...n, read_at: new Date().toISOString() })));
-    setUnread(0);
+    try {
+      await markAllNotificationsRead();
+      setItems((prev) => prev.map((n) => ({ ...n, read_at: new Date().toISOString() })));
+      setUnread(0);
+    } catch (err) {
+      apiToast(toast, err, 'Marquage des notifications impossible');
+    }
   }
 
   async function markOneRead(id: string) {
-    await markNotificationRead(id);
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
-    setUnread((u) => Math.max(0, u - 1));
+    try {
+      await markNotificationRead(id);
+      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
+      setUnread((u) => Math.max(0, u - 1));
+    } catch (err) {
+      apiToast(toast, err, 'Marquage de la notification impossible');
+    }
   }
 
   function openTarget(n: AppNotification) {
