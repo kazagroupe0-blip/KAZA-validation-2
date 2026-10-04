@@ -5,9 +5,6 @@ on:
   pull_request:
     branches:
       - validation/run-full-20260923
-  push:
-    branches:
-      - validation/run-full-20260923
 
 concurrency:
   group: ci-full-${{ github.ref }}
@@ -429,7 +426,6 @@ jobs:
           retention-days: 7
 
       - name: Realtime C1 diagnostic (fresh database)
-        if: ${{ always() }}
         id: c1
         continue-on-error: true
         env:
@@ -442,23 +438,7 @@ jobs:
           set -e
           mkdir -p "$C1_DIR"
 
-          reset_ok=0
-          for i in 1 2 3; do
-            if supabase db reset; then
-              reset_ok=1
-              break
-            fi
-            echo "C1: supabase db reset échoué (tentative $i/3) — nouvel essai dans 20s..."
-            sleep 20
-          done
-
-          if [ "$reset_ok" -ne 1 ]; then
-            echo "C1: échec définitif du reset Supabase" | tee "$C1_DIR/c1-reset-failure.txt"
-            docker ps -a > "$C1_DIR/docker-ps.txt" 2>&1 || true
-            docker logs --tail 250 supabase_db_kaza > "$C1_DIR/supabase-db.log" 2>&1 || true
-            exit 1
-          fi
-
+          supabase db reset
           docker restart supabase_realtime_kaza
 
           realtime_status=""
