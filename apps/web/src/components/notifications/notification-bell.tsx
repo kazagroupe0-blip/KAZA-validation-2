@@ -15,6 +15,8 @@ import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { timeAgo } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
 import { cn } from '@/lib/cn';
+import { apiToast } from '@/lib/api-toast';
+import { useToast } from '@/components/ui/toast';
 
 const TYPE_ICONS: Record<string, string> = {
   payment: '💵',
@@ -38,6 +40,7 @@ function targetFrom(n: AppNotification): string | null {
 export function NotificationBell() {
   const { user } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -173,15 +176,23 @@ export function NotificationBell() {
   }, [open]);
 
   async function markAllRead() {
-    await markAllNotificationsRead();
-    setItems((prev) => prev.map((n) => ({ ...n, read_at: new Date().toISOString() })));
-    setUnread(0);
+    try {
+      await markAllNotificationsRead();
+      setItems((prev) => prev.map((n) => ({ ...n, read_at: new Date().toISOString() })));
+      setUnread(0);
+    } catch (err) {
+      apiToast(toast, err, 'Impossible de marquer les notifications comme lues');
+    }
   }
 
   async function markOneRead(id: string) {
-    await markNotificationRead(id);
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
-    setUnread((u) => Math.max(0, u - 1));
+    try {
+      await markNotificationRead(id);
+      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
+      setUnread((u) => Math.max(0, u - 1));
+    } catch (err) {
+      apiToast(toast, err, 'Impossible de marquer la notification comme lue');
+    }
   }
 
   function openTarget(n: AppNotification) {
