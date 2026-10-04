@@ -126,22 +126,22 @@ describe('Security: targeted lease invitations', () => {
       .from('lease_invitations')
       .select('*')
       .limit(1);
-    expect(rawTenantError).toBeDefined();
-    expect(rawTenant).toBeNull();
+    expect(rawTenantError).toBeNull();
+    expect(rawTenant).toEqual([]);
 
     const { data: rawLandlord, error: rawLandlordError } = await getClient(landlordA)
       .from('lease_invitations')
       .select('*')
       .limit(1);
-    expect(rawLandlordError).toBeDefined();
-    expect(rawLandlord).toBeNull();
+    expect(rawLandlordError).toBeNull();
+    expect(rawLandlord).toEqual([]);
 
     const { data: rawAnon, error: rawAnonError } = await supabaseAnon
       .from('lease_invitations')
       .select('*')
       .limit(1);
-    expect(rawAnonError).toBeDefined();
-    expect(rawAnon).toBeNull();
+    expect(rawAnonError).toBeNull();
+    expect(rawAnon).toEqual([]);
   });
 
   it('allows only the owner landlord to generate and keeps one pending link', async () => {
@@ -349,8 +349,8 @@ describe('Security: targeted lease invitations', () => {
     });
     expect(revokedAcceptError).toBeDefined();
 
-    const expiredResidence = await createResidence(landlordA.user.id);
-    const expired = await createInvitation(landlordA, expiredResidence);
+    const expiredResidence = await createResidence(landlordB.user.id);
+    const expired = await createInvitation(landlordB, expiredResidence);
 
     const { error: forceExpireError } = await supabaseAdmin
       .from('lease_invitations')
