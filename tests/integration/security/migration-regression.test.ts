@@ -78,8 +78,9 @@ describe('Migration regression tests', () => {
       price_monthly: 100000,
       city: 'Cotonou',
       zone: 'Test',
-      is_published: true,
+      is_published: false,
       is_verified: false,
+      moderation_status: 'pending',
     }).select('id').single();
     if (error) throw error;
     return data.id;
