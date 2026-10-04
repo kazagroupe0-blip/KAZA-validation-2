@@ -1259,6 +1259,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      confirm_payment: { Args: { p_payment_id: string }; Returns: undefined }
       confirm_visit: {
         Args: { p_slot_index: number; p_visit_id: string }
         Returns: undefined
@@ -1605,6 +1606,7 @@ export type Database = {
         Args: { p_conversation_id: string; p_slots: Json }
         Returns: string[]
       }
+      reject_payment: { Args: { p_payment_id: string }; Returns: undefined }
       report_cash_payment: {
         Args: {
           p_amount: number
