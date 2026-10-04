@@ -19,22 +19,26 @@ export async function unreadNotificationsCount(): Promise<number> {
     .select('id', { count: 'exact', head: true })
     .is('read_at', null)
     .is('resolved_at', null);
-  if (error) return 0;
+  if (error) throw normalizeError(error, 'Compteur de notifications indisponible');
   return count ?? 0;
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
     .is('read_at', null);
+
+  if (error) throw normalizeError(error, 'Marquage des notifications impossible');
 }
 
 export async function markNotificationRead(notificationId: string): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
     .eq('id', notificationId);
+
+  if (error) throw normalizeError(error, 'Marquage de la notification impossible');
 }
 
 export async function resolveNotification(notificationId: string): Promise<void> {

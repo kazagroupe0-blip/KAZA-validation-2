@@ -15,6 +15,8 @@ import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { timeAgo } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
 import { cn } from '@/lib/cn';
+import { apiToast } from '@/lib/api-toast';
+import { useToast } from '@/components/ui/toast';
 
 const TYPE_ICONS: Record<string, string> = {
   payment: '💵',
@@ -38,6 +40,7 @@ function targetFrom(n: AppNotification): string | null {
 export function NotificationBell() {
   const { user } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -57,31 +60,35 @@ export function NotificationBell() {
     let mounted = true;
 
     const load = async () => {
-      const [list, count] = await Promise.all([
-        listNotifications(30),
-        unreadNotificationsCount(),
-      ]);
-      if (!mounted) return;
+      try {
+        const [list, count] = await Promise.all([
+          listNotifications(30),
+          unreadNotificationsCount(),
+        ]);
+        if (!mounted) return;
 
-      // Un INSERT Realtime peut arriver pendant le chargement HTTP initial.
-      // Ne jamais écraser cet événement local avec une réponse plus ancienne.
-      const mergedById = new Map(list.map((item) => [item.id, item]));
-      for (const [id, live] of liveNotificationsRef.current) {
-        if (!mergedById.has(id)) mergedById.set(id, live);
+        // Un INSERT Realtime peut arriver pendant le chargement HTTP initial.
+        // Ne jamais écraser cet événement local avec une réponse plus ancienne.
+        const mergedById = new Map(list.map((item) => [item.id, item]));
+        for (const [id, live] of liveNotificationsRef.current) {
+          if (!mergedById.has(id)) mergedById.set(id, live);
+        }
+
+        const merged = [...mergedById.values()]
+          .filter((item) => !item.resolved_at)
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+          .slice(0, 30);
+
+        const fetchedIds = new Set(list.map((item) => item.id));
+        const liveUnreadNotFetched = [...liveNotificationsRef.current.values()]
+          .filter((item) => !fetchedIds.has(item.id) && !item.read_at && !item.resolved_at)
+          .length;
+
+        setItems(merged);
+        setUnread(count + liveUnreadNotFetched);
+      } catch (error) {
+        if (mounted) apiToast(toast, error, 'Chargement des notifications impossible');
       }
-
-      const merged = [...mergedById.values()]
-        .filter((item) => !item.resolved_at)
-        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-        .slice(0, 30);
-
-      const fetchedIds = new Set(list.map((item) => item.id));
-      const liveUnreadNotFetched = [...liveNotificationsRef.current.values()]
-        .filter((item) => !fetchedIds.has(item.id) && !item.read_at && !item.resolved_at)
-        .length;
-
-      setItems(merged);
-      setUnread(count + liveUnreadNotFetched);
     };
     void load();
 
@@ -151,7 +158,7 @@ export function NotificationBell() {
       window.removeEventListener('kaza:notifications-refresh', onNotificationsRefresh);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [toast, user?.id]);
 
   // Fermeture au clic extérieur + Échap.
   useEffect(() => {
@@ -173,15 +180,23 @@ export function NotificationBell() {
   }, [open]);
 
   async function markAllRead() {
-    await markAllNotificationsRead();
-    setItems((prev) => prev.map((n) => ({ ...n, read_at: new Date().toISOString() })));
-    setUnread(0);
+    try {
+      await markAllNotificationsRead();
+      setItems((prev) => prev.map((n) => ({ ...n, read_at: new Date().toISOString() })));
+      setUnread(0);
+    } catch (error) {
+      apiToast(toast, error, 'Impossible de marquer les notifications comme lues');
+    }
   }
 
   async function markOneRead(id: string) {
-    await markNotificationRead(id);
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
-    setUnread((u) => Math.max(0, u - 1));
+    try {
+      await markNotificationRead(id);
+      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
+      setUnread((u) => Math.max(0, u - 1));
+    } catch (error) {
+      apiToast(toast, error, 'Impossible de marquer la notification comme lue');
+    }
   }
 
   function openTarget(n: AppNotification) {
