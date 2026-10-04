@@ -102,7 +102,7 @@ describe('Security: targeted lease invitations', () => {
   }
 
   it('stores only a SHA-256 token hash and denies raw table access', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
     const invitation = await createInvitation(landlordA, residenceId);
 
     expect(invitation.token).toMatch(/^[0-9a-f]{64}$/i);
@@ -142,7 +142,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('allows only the owner landlord to generate and keeps one pending link', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
 
     const { error: crossOwnerError } = await getClient(landlordB).rpc('create_lease_invitation', {
       p_residence_id: residenceId,
@@ -164,7 +164,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('landlord listing returns metadata only, never the secret token', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
     await createInvitation(landlordA, residenceId);
 
     const { data, error } = await getClient(landlordA).rpc('list_my_lease_invitations', {
@@ -177,7 +177,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('tenant can inspect and accept; the accepted tenant becomes lease-eligible', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
     const invitation = await createInvitation(landlordA, residenceId);
 
     const { data: details, error: detailsError } = await getClient(tenantA).rpc('get_lease_invitation', {
@@ -240,7 +240,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('lets the owner cancel an accepted invitation before lease creation', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
     const invitation = await createInvitation(landlordA, residenceId);
 
     const { error: acceptError } = await getClient(tenantA).rpc('accept_lease_invitation', {
@@ -290,7 +290,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('requires the invitation link before creating a lease when no conversation exists', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
 
     const { data: unrelatedLease, error: unrelatedError } = await getClient(landlordA).rpc('create_lease', {
       p_residence_id: residenceId,
@@ -333,7 +333,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('revoked and expired invitations cannot be used', async () => {
-    const revokedResidence = await createResidence(landlordA);
+    const revokedResidence = await createResidence(landlordA.user.id);
     const revoked = await createInvitation(landlordA, revokedResidence);
 
     const { error: revokeError } = await getClient(landlordA).rpc('revoke_lease_invitation', {
@@ -346,7 +346,7 @@ describe('Security: targeted lease invitations', () => {
     });
     expect(revokedAcceptError).toBeDefined();
 
-    const expiredResidence = await createResidence(landlordA);
+    const expiredResidence = await createResidence(landlordA.user.id);
     const expired = await createInvitation(landlordA, expiredResidence);
 
     const { error: forceExpireError } = await supabaseAdmin
@@ -368,7 +368,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('blocks tenant listing/revocation and cross-landlord revocation', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
     const invitation = await createInvitation(landlordA, residenceId);
 
     const { error: tenantListError } = await getClient(tenantA).rpc('list_my_lease_invitations', {
@@ -388,7 +388,7 @@ describe('Security: targeted lease invitations', () => {
   });
 
   it('does not allow a landlord to accept a tenant invitation', async () => {
-    const residenceId = await createResidence(landlordA);
+    const residenceId = await createResidence(landlordA.user.id);
     const invitation = await createInvitation(landlordA, residenceId);
 
     const { error } = await getClient(landlordA).rpc('accept_lease_invitation', {
