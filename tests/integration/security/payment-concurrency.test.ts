@@ -212,26 +212,16 @@ describe('Payment concurrency & idempotence', () => {
 
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
 
-      // First confirmation via direct UPDATE (app pattern)
-      const { error: error1 } = await getClient(landlordA)
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString(),
-          confirmed_by: landlordA.user.id,
-        })
-        .eq('id', paymentId);
+      // First confirmation through the secured RPC boundary.
+      const { error: error1 } = await getClient(landlordA).rpc('confirm_payment', {
+        p_payment_id: paymentId,
+      });
       expect(error1).toBeNull();
 
-      // Second confirmation - should be idempotent (update same values)
-      const { error: error2 } = await getClient(landlordA)
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString(),
-          confirmed_by: landlordA.user.id,
-        })
-        .eq('id', paymentId);
+      // Second confirmation through the same RPC must be idempotent.
+      const { error: error2 } = await getClient(landlordA).rpc('confirm_payment', {
+        p_payment_id: paymentId,
+      });
       expect(error2).toBeNull();
 
       // Verify payment is confirmed (not double-counted)
@@ -250,21 +240,16 @@ describe('Payment concurrency & idempotence', () => {
 
       const paymentId = await reportCashPaymentAndGetId(getClient(tenantA), leaseId, 100000, periodStart, periodEnd);
 
-      // Confirm first
-      await getClient(landlordA)
-        .from('payments')
-        .update({
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString(),
-          confirmed_by: landlordA.user.id,
-        })
-        .eq('id', paymentId);
+      // Confirm first through the secured RPC boundary.
+      const { error: confirmError } = await getClient(landlordA).rpc('confirm_payment', {
+        p_payment_id: paymentId,
+      });
+      expect(confirmError).toBeNull();
 
-      // Try to reject confirmed payment - should fail (trigger prevents status change from confirmed)
-      const { error } = await getClient(landlordA)
-        .from('payments')
-        .update({ status: 'rejected' })
-        .eq('id', paymentId);
+      // A confirmed payment cannot be rejected afterwards.
+      const { error } = await getClient(landlordA).rpc('reject_payment', {
+        p_payment_id: paymentId,
+      });
       expect(error).toBeDefined();
     });
   });
