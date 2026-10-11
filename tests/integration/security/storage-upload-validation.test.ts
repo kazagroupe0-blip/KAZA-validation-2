@@ -13,10 +13,10 @@ import {
  *
  * Ces tests exigent une base locale sur laquelle l'ACTIVATION F05 a été appliquée
  * (supabase/activation/f05_activate_storage_validation.sql, env local-test, avec des
- * entrées Vault locales jetables) ET le trigger webhook MIS EN PAUSE par la CI
- * (KAZA_F05_WEBHOOK_PAUSED=1) : les états pending/validated/rejected sont pilotés à la main
- * en service_role pour tester les règles d'accès de façon déterministe. Le trajet automatique
- * réel est couvert par storage-validation-automatic.test.ts.
+ * entrées Vault locales jetables) ET la fonction de dispatch webhook remplacée temporairement
+ * par un no-op dans la base CI jetable (KAZA_F05_WEBHOOK_PAUSED=1) : les triggers restent actifs,
+ * tandis que les états pending/validated/rejected sont pilotés manuellement en service_role.
+ * Le trajet automatique réel est couvert par storage-validation-automatic.test.ts.
  * Ignorés tant que KAZA_F05_ACTIVATED != 1 ou KAZA_F05_WEBHOOK_PAUSED != 1.
  */
 const enabled =

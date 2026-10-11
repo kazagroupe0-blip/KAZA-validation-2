@@ -530,29 +530,27 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(wf).not.toMatch(/psql[^\n]*\|\s*tee/);
     expect(loop).not.toMatch(/\|\s*tee/);
     expect(loop).toContain('exit 1');
-    expect(wf).toContain('SET ROLE supabase_admin;');
-    expect(wf).toContain('SET ROLE supabase_storage_admin;');
-    expect(wf).not.toContain('psql -U supabase_admin -d postgres');
-    expect(wf).not.toContain('psql -U supabase_storage_admin -d postgres');
+    expect(wf).toContain('CI injected enqueue failure');
+    expect(wf).toContain("pg_get_functiondef('private.dispatch_storage_validation_webhook()'::regprocedure)");
+    expect(wf).not.toContain('SET ROLE supabase_admin;');
+    expect(wf).not.toContain('SET ROLE supabase_storage_admin;');
     // seuls rejoues apres reactivation, volontairement et documentes
     expect(wf.match(/ci\/target_assertions\.sql/g)).toHaveLength(1); // le rejeu post-reactivation
     expect(wf).toContain('rejoues APRES la réactivation'.replace('rejoues', 'rejoués'));
   });
 
-  it('reports a not-executed pg_net test and any skipped integration test as NOT a pass', () => {
-    expect(wf).toContain('NOT EXECUTED - pg_net enqueue-failure assertions');
-    expect(wf).toContain('GITHUB_STEP_SUMMARY');
+  it('fails immediately if the mandatory enqueue-failure test ever reports a skip', () => {
+    expect(wf).toContain('ENQUEUE_FAILURE_TEST_SKIPPED');
+    expect(wf).toContain('mandatory fault injection did not run');
+    expect(wf).toContain('reports/f05-not-executed.txt');
     const skip = wf.slice(wf.indexOf('name: No skipped F05 integration test'));
     expect(skip).toContain("grep -c '<skipped'");
     expect(skip).toContain('f05-controlled-junit.xml');
     expect(skip).toContain('f05-automatic-junit.xml');
     expect(skip).toContain('exit 1');
     const sqlFile = readSql('../supabase/activation/ci/enqueue_failure_assertions.sql');
-    expect(sqlFile).toContain('ENQUEUE_FAILURE_TEST_SKIPPED');
-    expect(sqlFile).toContain("then 'true'");
-    expect(sqlFile).toContain("else 'false'");
+    expect(sqlFile).not.toContain('ENQUEUE_FAILURE_TEST_SKIPPED');
   });
-
   it('fails the run (explicit gate) when a mandatory assertion was not executed', () => {
     expect(wf).toContain('reports/f05-not-executed.txt');
     const gate = wf.slice(wf.indexOf('name: Final gate'));
@@ -561,22 +559,19 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(wf.indexOf('name: Final gate')).toBeLessThan(wf.indexOf('name: Upload reports'));
   });
 
-  it('pauses ONLY the two webhook triggers and always resumes them', () => {
-    expect(wf).not.toMatch(/disable trigger (all|user)/i);
-    const disabled = [...wf.matchAll(/disable trigger "([^"]+)"/gi)].map((m) => m[1]).sort();
-    expect(disabled).toEqual(['kaza-storage-content-validation', 'kaza-storage-content-validation-update']);
-    expect(wf).toContain('trap resume EXIT');
-    expect(wf).toContain("tgenabled = 'D') = 2");
+  it('stubs only the F05 dispatcher in the disposable controlled-integration step and restores it', () => {
+    expect(wf).not.toMatch(/disable trigger "kaza-storage-content-validation(?:-update)?"/i);
+    expect(wf).toContain('trap restore_dispatch EXIT');
     const controlled = wf.slice(wf.indexOf('name: F05 integration tests - controlled states'), wf.indexOf('name: F05 integration tests - AUTOMATIC path'));
-    expect(controlled).toContain('SET ROLE supabase_storage_admin;');
-    expect(controlled).toContain('must own storage.objects');
-    expect(controlled).not.toContain('psql -U supabase_storage_admin -d postgres');
+    expect(controlled).toContain('create or replace function private.dispatch_storage_validation_webhook()');
+    expect(controlled).toContain('pg_get_functiondef');
+    expect(controlled).toContain('both webhook triggers must remain enabled');
+    expect(controlled).toContain('if ! restore_dispatch; then');
+    expect(controlled).toContain('exit $rc');
   });
-
   it('runs the automatic-path tests with the webhook enabled and the direct tests with it paused', () => {
-    expect(wf).toMatch(/disable trigger "kaza-storage-content-validation"/i);
-    expect(wf).toMatch(/enable trigger "kaza-storage-content-validation"/i);
     expect(wf).toContain('storage-validation-automatic.test.ts');
     expect(wf).toContain('race_validated_vs_rejected.sh');
+    expect(wf.indexOf('if ! restore_dispatch; then')).toBeLessThan(wf.indexOf('name: F05 integration tests - AUTOMATIC path'));
   });
 });

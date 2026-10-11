@@ -12,8 +12,9 @@ import {
  * F05 — validateur Edge RÉEL (supabase functions serve) piloté DIRECTEMENT par ces tests.
  *
  * ATTENTION — ces appels directs NE PROUVENT PAS le trajet automatique PostgreSQL -> pg_net -> Edge :
- * c'est le rôle de storage-validation-automatic.test.ts. Ici le trigger webhook est mis en pause
- * par la CI (alter table storage.objects disable trigger) pour que chaque état soit piloté à la main :
+ * c'est le rôle de storage-validation-automatic.test.ts. Ici le dispatcher webhook est remplacé
+ * temporairement par un no-op dans la base CI jetable (les triggers Storage restent actifs) afin que
+ * chaque état soit piloté à la main :
  * transitions, rejeux, concurrence, défense en profondeur et échec de suppression.
  *
  * Variables : KAZA_F05_ACTIVATED=1, KAZA_F05_WEBHOOK_PAUSED=1, KAZA_F05_EDGE_URL, KAZA_F05_WEBHOOK_SECRET
