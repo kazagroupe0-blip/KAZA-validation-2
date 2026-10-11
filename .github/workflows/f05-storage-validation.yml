@@ -256,14 +256,17 @@ jobs:
           end;
           $f05_assert$;
           SQL
-          if ! grep -Fq 'as $f05_reset
-
- /tmp/f05-reset-helper.sql || ! grep -Fq '$f05_reset$;' /tmp/f05-reset-helper.sql || ! grep -Fq 'do $f05_assert
-
- /tmp/f05-reset-helper.sql || ! grep -Fq '$f05_assert$;' /tmp/f05-reset-helper.sql; then
-            echo "::error::F05 reset helper SQL dollar-quote delimiters were altered before execution"
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          sql = Path("/tmp/f05-reset-helper.sql").read_text(encoding="utf-8")
+          reset_tag = chr(36) + "f05_reset" + chr(36)
+          assert "as " + reset_tag in sql, "reset function opening delimiter missing"
+          assert reset_tag + ";" in sql, "reset function closing delimiter missing"
+          assertion_tag = chr(36) + "f05_assert" + chr(36)
+          assert "do " + assertion_tag in sql, "assertion block opening delimiter missing"
+          assert assertion_tag + ";" in sql, "assertion block closing delimiter missing"
+          print("F05 reset helper SQL delimiters verified")
+          PY
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-reset-helper.sql
 
       - name: F05 integration tests (RLS, states, Edge validator)
