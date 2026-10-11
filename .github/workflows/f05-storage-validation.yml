@@ -217,7 +217,7 @@ jobs:
           language plpgsql
           security definer
           set search_path = pg_catalog, public
-          as $
+          as $f05_reset$
           begin
             if auth.role() <> 'service_role' then
               raise exception 'Test-only helper';
@@ -236,12 +236,12 @@ jobs:
             delete from public.admin_audit_logs where true;
             delete from public.residences where true;
           end;
-          $;
+          $f05_reset$;
 
           revoke all on function public.reset_test_database() from public, anon, authenticated;
           grant execute on function public.reset_test_database() to service_role;
 
-          do $
+          do $f05_assert$
           begin
             if to_regprocedure('public.reset_test_database()') is null then
               raise exception 'CI reset helper was not created';
@@ -254,8 +254,16 @@ jobs:
               raise exception 'service_role cannot execute CI reset helper';
             end if;
           end;
-          $;
+          $f05_assert$;
           SQL
+          if ! grep -Fq 'as $f05_reset
+
+ /tmp/f05-reset-helper.sql || ! grep -Fq '$f05_reset$;' /tmp/f05-reset-helper.sql || ! grep -Fq 'do $f05_assert
+
+ /tmp/f05-reset-helper.sql || ! grep -Fq '$f05_assert$;' /tmp/f05-reset-helper.sql; then
+            echo "::error::F05 reset helper SQL dollar-quote delimiters were altered before execution"
+            exit 1
+          fi
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-reset-helper.sql
 
       - name: F05 integration tests (RLS, states, Edge validator)
