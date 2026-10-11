@@ -530,7 +530,7 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(wf).not.toMatch(/psql[^\n]*\|\s*tee/);
     expect(loop).not.toMatch(/\|\s*tee/);
     expect(loop).toContain('exit 1');
-    expect(wf).toContain('CI injected enqueue failure');
+    expect(wf).toContain('$db < "$sql_file"');
     expect(wf).toContain("pg_get_functiondef('private.dispatch_storage_validation_webhook()'::regprocedure)");
     expect(wf).not.toContain('SET ROLE supabase_admin;');
     expect(wf).not.toContain('SET ROLE supabase_storage_admin;');
@@ -549,7 +549,11 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(skip).toContain('f05-automatic-junit.xml');
     expect(skip).toContain('exit 1');
     const sqlFile = readSql('../supabase/activation/ci/enqueue_failure_assertions.sql');
+    expect(sqlFile).toContain('CI injected enqueue failure');
+    expect(sqlFile).toContain("pg_get_functiondef('private.dispatch_storage_validation_webhook()'::regprocedure)");
     expect(sqlFile).not.toContain('ENQUEUE_FAILURE_TEST_SKIPPED');
+    expect(sqlFile).not.toMatch(/alter schema net rename/i);
+    expect(sqlFile).toContain('private.retry_stale_storage_validations()');
   });
   it('fails the run (explicit gate) when a mandatory assertion was not executed', () => {
     expect(wf).toContain('reports/f05-not-executed.txt');
