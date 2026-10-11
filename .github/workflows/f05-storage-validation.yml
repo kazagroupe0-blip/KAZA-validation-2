@@ -125,90 +125,6 @@ jobs:
           SQL
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-grants.sql
 
-      - name: Prepare disposable local Vault entries (never printed)
-        run: |
-          secret=$(openssl rand -hex 32)
-          echo "::add-mask::$secret"
-          echo "F05_WEBHOOK_SECRET=$secret" >> "$GITHUB_ENV"
-          # Entrées Vault jetables du runner. Le ref "local-test" est refusé hors environnement local-test.
-          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v s="$secret" <<'SQL'
-          create extension if not exists pg_net;
-          create extension if not exists pg_cron;
-          select vault.create_secret(:'s', 'kaza_storage_validation_webhook_secret') is not null as secret_created;
-          select vault.create_secret('https://localtestrefaaaaaaaa.supabase.co/functions/v1/validate-file-upload',
-                                     'kaza_storage_validation_function_url') is not null as url_created;
-          select vault.create_secret('localtestrefaaaaaaaa', 'kaza_storage_validation_expected_project_ref') is not null as ref_created;
-          SQL
-
-      - name: Activation guards - wrong environment/ref must fail and install nothing
-        run: |
-          run_activation() {
-            docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-              -v target_env="$1" -v expected_ref="$2" < supabase/activation/f05_activate_storage_validation.sql
-          }
-          # Le ref de test ne doit jamais être accepté pour la production, ni l'inverse.
-          if run_activation production bzvlnefowgtuasqjfpem > /tmp/act1.log 2>&1; then echo "::error::activation accepted test ref for production"; exit 1; fi
-          grep -q "does not match target_env" /tmp/act1.log
-          if run_activation test qbogbuwnkwqgarbchtyr > /tmp/act2.log 2>&1; then echo "::error::activation accepted production ref for test"; exit 1; fi
-          # Bon ref d'environnement mais Vault local-test : doit échouer sur la divergence Vault.
-          if run_activation test bzvlnefowgtuasqjfpem > /tmp/act3.log 2>&1; then echo "::error::activation accepted mismatching Vault ref"; exit 1; fi
-          grep -qi "different project\|differs" /tmp/act3.log
-          # Rien n'a été installé par ces échecs.
-          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-          do $$
-          begin
-            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
-                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
-                   = '_guard_storage_upload', 'failed activation must leave the guard untouched';
-            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
-              'failed activation must not install the webhook';
-          end $$;
-          SQL
-
-      - name: Phase 2 - activate (local-test), post-checks, SQL assertions
-        run: |
-          activate() {
-            docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-              -v target_env=local-test -v expected_ref=localtestrefaaaaaaaa < supabase/activation/f05_activate_storage_validation.sql
-          }
-          activate
-          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/activation/f05_post_activation_checks.sql
-          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/activation/ci/retry_assertions.sql
-          # Idempotence et rollback : rollback puis réactivation.
-          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/activation/f05_rollback_storage_validation.sql
-          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-          do $$
-          begin
-            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
-                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
-                   = '_guard_storage_upload', 'rollback must restore the original guard';
-            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
-              'rollback must remove the webhook trigger';
-          end $$;
-          SQL
-          activate
-          activate
-
-      - name: Serve Edge validator locally
-        run: |
-          umask 077
-          {
-            echo "SUPABASE_URL=$F05_API_URL"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$F05_SERVICE_KEY"
-            echo "STORAGE_VALIDATION_WEBHOOK_SECRET=$F05_WEBHOOK_SECRET"
-          } > /tmp/f05-edge.env
-          nohup supabase functions serve --env-file /tmp/f05-edge.env > /tmp/f05-edge.log 2>&1 &
-          for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-              "$F05_API_URL/functions/v1/validate-file-upload" -H 'Content-Type: application/json' \
-              -H "apikey: $F05_ANON_KEY" -d '{}' || echo 000)
-            if [ "$code" = "401" ]; then echo "validate-file-upload ready (handler answers 401 without secret)"; exit 0; fi
-            sleep 3
-          done
-          echo "::error::Edge validator did not become ready (last HTTP $code)"
-          sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -40
-          exit 1
-
       - name: Install CI-only reset helper for integration tests
         run: |
           cat > /tmp/f05-reset-helper.sql <<'SQL'
@@ -269,20 +185,385 @@ jobs:
           PY
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-reset-helper.sql
 
-      - name: F05 integration tests (RLS, states, Edge validator)
+      - name: Install CI-only deletion-failure simulator
+        run: |
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            < supabase/activation/ci/test_helpers.sql
+
+      - name: Prepare legacy PDF-in-residence-photos fixture (BEFORE activation)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.F05_API_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.F05_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.F05_SERVICE_KEY }}
+          KAZA_F05_PREPARE_FIXTURE: '1'
+          KAZA_F05_PDF_FIXTURE: ${{ github.workspace }}/reports/f05-legacy-pdf-fixture.json
+        run: |
+          mkdir -p reports
+          # La garde historique est encore liée : ce vrai objet n'existerait plus après activation.
+          npx vitest run -c vitest.config.integration.ts \
+            tests/integration/security/f05-prepare-legacy-fixture.test.ts
+          test -s reports/f05-legacy-pdf-fixture.json
+
+      - name: Pre-activation state - legacy trigger kept, nothing registered
+        run: |
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare v_msg text;
+          begin
+            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
+                   = '_guard_storage_upload', 'legacy guard must stay bound before activation';
+            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
+              'no webhook trigger before activation';
+            assert not exists (select 1 from private.f05_activation), 'no registered activation before activation';
+            begin
+              perform private.storage_validation_target();
+              raise exception 'target must be refused before activation';
+            exception when others then
+              v_msg := sqlerrm;
+            end;
+            assert v_msg like 'Storage validation is not activated%', 'unexpected pre-activation target error: ' || v_msg;
+          end $$;
+          SQL
+
+      - name: Serve Edge validator locally (BEFORE activation)
+        run: |
+          secret=$(openssl rand -hex 32)
+          echo "::add-mask::$secret"
+          echo "F05_WEBHOOK_SECRET=$secret" >> "$GITHUB_ENV"
+          umask 077
+          # Seul le secret jetable est fourni : le CLI injecte SUPABASE_URL et les clés internes au conteneur Edge.
+          echo "STORAGE_VALIDATION_WEBHOOK_SECRET=$secret" > /tmp/f05-edge.env
+          nohup supabase functions serve --env-file /tmp/f05-edge.env > /tmp/f05-edge.log 2>&1 &
+
+          probe() { # $1 path, $2 secret-or-empty, $3 body
+            if [ -n "$2" ]; then
+              curl -s -o /dev/null -w '%{http_code}' -X POST "$F05_API_URL/functions/v1/$1" \
+                -H 'Content-Type: application/json' -H "apikey: $F05_ANON_KEY" \
+                -H "x-storage-validation-secret: $2" -d "$3" || echo 000
+            else
+              curl -s -o /dev/null -w '%{http_code}' -X POST "$F05_API_URL/functions/v1/$1" \
+                -H 'Content-Type: application/json' -H "apikey: $F05_ANON_KEY" -d "$3" || echo 000
+            fi
+          }
+
+          ready=000
+          for i in $(seq 1 60); do
+            ready=$(probe validate-file-upload-v2 "" '{}')
+            if [ "$ready" = "401" ]; then break; fi
+            sleep 3
+          done
+          if [ "$ready" != "401" ]; then
+            echo "::error::Edge validator did not become ready (last HTTP $ready)"
+            sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -40
+            exit 1
+          fi
+          echo "host -> Edge: both slugs answer 401 without secret"
+          [ "$(probe validate-file-upload "" '{}')" = "401" ]
+
+          # Secret valide + événement invalide : le handler authentifie puis répond 400 (jamais 401).
+          code=$(probe validate-file-upload-v2 "$secret" '{"type":"PING"}')
+          echo "host -> Edge with secret and invalid event: HTTP $code (expected 400)"
+          [ "$code" = "400" ]
+
+          # Le handler, à l'intérieur de son conteneur, atteint l'API et la base : objet inconnu => 409 sans état.
+          code=$(probe validate-file-upload-v2 "$secret" \
+            '{"type":"INSERT","schema":"storage","table":"objects","record":{"bucket_id":"chat-files","name":"ci-probe/none.jpg","metadata":{"mimetype":"image/jpeg","size":40}}}')
+          echo "Edge -> API/DB (admin client inside the Edge container): HTTP $code (expected 409)"
+          if [ "$code" != "409" ]; then
+            sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -40
+            exit 1
+          fi
+
+      - name: PG to Edge - discover the route reachable from the PostgreSQL container
+        run: |
+          db=supabase_db_kaza
+          docker exec -i "$db" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "create extension if not exists pg_net;" -c "create extension if not exists pg_cron;"
+
+          # Réseau, conteneur Kong et ports réellement exposés : rien n'est supposé.
+          net=$(docker inspect "$db" --format '{{range $k,$_ := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -1)
+          kong=$(docker ps --filter "network=$net" --filter "name=supabase_kong" --format '{{.Names}}' | head -1)
+          echo "docker network: $net"
+          echo "gateway container: ${kong:-<none>}"
+          docker ps --filter "network=$net" --format '  container on network: {{.Names}}'
+          [ -n "$kong" ] || { echo "::error::no gateway container found on the PostgreSQL network"; exit 1; }
+          ports=$(docker inspect "$kong" --format '{{range $p,$_ := .Config.ExposedPorts}}{{$p}}{{"\n"}}{{end}}' | sed 's#/tcp$##' | grep -E '^[0-9]+$' | sort -u)
+          echo "gateway exposed tcp ports: $(echo $ports)"
+
+          # Sonde faite PAR PostgreSQL (pg_net), donc depuis le conteneur de la base.
+          pg_probe() { # $1 url, $2 secret
+            local id code
+            id=$(docker exec -i "$db" psql -U postgres -d postgres -X -q -t -A -v ON_ERROR_STOP=1 \
+                   -v u="$1" -v s="$2" -v k="$F05_ANON_KEY" <<'SQL' | tr -d '[:space:]'
+          select net.http_post(
+            url := :'u',
+            body := '{"type":"PING"}'::jsonb,
+            headers := jsonb_build_object('Content-Type','application/json','x-storage-validation-secret',:'s','apikey',:'k'),
+            timeout_milliseconds := 8000);
+          SQL
+            )
+            for i in $(seq 1 20); do
+              code=$(docker exec -i "$db" psql -U postgres -d postgres -X -q -t -A \
+                       -c "select coalesce(status_code::text, 'err:' || coalesce(left(error_msg, 80), '?')) from net._http_response where id = $id" | tr -d '[:space:]')
+              if [ -n "$code" ]; then echo "$code"; return 0; fi
+              sleep 1
+            done
+            echo "no-response"
+          }
+
+          chosen=""
+          for port in $ports; do
+            url="http://$kong:$port/functions/v1/validate-file-upload-v2"
+            code=$(pg_probe "$url" "$F05_WEBHOOK_SECRET")
+            echo "pg_net probe http://$kong:$port/... with secret -> $code"
+            if [ "$code" = "400" ]; then chosen="$url"; break; fi
+          done
+          if [ -z "$chosen" ]; then
+            echo "::error::PostgreSQL could not reach the Edge validator through any exposed gateway port"
+            sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -40
+            exit 1
+          fi
+          bad=$(pg_probe "$chosen" "$(printf 'w%.0s' $(seq 1 40))")
+          echo "pg_net probe with a WRONG secret -> $bad (expected 401)"
+          [ "$bad" = "401" ]
+          none=$(pg_probe "$chosen" "")
+          echo "pg_net probe with an EMPTY secret -> $none (expected 401)"
+          [ "$none" = "401" ]
+          echo "F05_PG_EDGE_URL=$chosen" >> "$GITHUB_ENV"
+          echo "PG -> Edge route verified: $chosen"
+
+      - name: Prepare disposable local Vault entries (never printed)
+        run: |
+          # Entrées Vault jetables du runner. Le ref "local-test" et l'URL http locale ne sont acceptés
+          # que si l'activation ENREGISTRÉE est local-test. apikey = clé anon locale (jamais service_role).
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -v s="$F05_WEBHOOK_SECRET" -v u="$F05_PG_EDGE_URL" -v k="$F05_ANON_KEY" <<'SQL'
+          select vault.create_secret(:'s', 'kaza_storage_validation_webhook_secret') is not null as secret_created;
+          select vault.create_secret(:'u', 'kaza_storage_validation_function_url') is not null as url_created;
+          select vault.create_secret('localtestrefaaaaaaaa', 'kaza_storage_validation_expected_project_ref') is not null as ref_created;
+          select vault.create_secret(:'k', 'kaza_storage_validation_apikey') is not null as apikey_created;
+          SQL
+
+      - name: Activation guards - wrong environment/ref/URL must fail and install nothing
+        run: |
+          db="docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1"
+          run_activation() {
+            $db -v target_env="$1" -v expected_ref="$2" < supabase/activation/f05_activate_storage_validation.sql
+          }
+          set_vault_ref() {
+            $db -v r="$1" > /dev/null <<'SQL'
+          select vault.update_secret((select id from vault.secrets where name = 'kaza_storage_validation_expected_project_ref'), :'r');
+          SQL
+          }
+          # Le ref de test ne doit jamais être accepté pour la production, ni l'inverse.
+          if run_activation production bzvlnefowgtuasqjfpem > /tmp/act1.log 2>&1; then echo "::error::activation accepted test ref for production"; exit 1; fi
+          grep -q "does not match target_env" /tmp/act1.log
+          if run_activation test qbogbuwnkwqgarbchtyr > /tmp/act2.log 2>&1; then echo "::error::activation accepted production ref for test"; exit 1; fi
+          # Bon ref d'environnement mais Vault local-test : doit échouer sur la divergence Vault.
+          if run_activation test bzvlnefowgtuasqjfpem > /tmp/act3.log 2>&1; then echo "::error::activation accepted mismatching Vault ref"; exit 1; fi
+          grep -qi "different project\|differs" /tmp/act3.log
+          # Vault cohérent avec production/test, mais l'URL est locale (http) : refusé par l'environnement.
+          for pair in "production qbogbuwnkwqgarbchtyr" "test bzvlnefowgtuasqjfpem"; do
+            set -- $pair
+            set_vault_ref "$2" > /dev/null
+            if run_activation "$1" "$2" > /tmp/act4.log 2>&1; then echo "::error::$1 activation accepted a local HTTP function URL"; exit 1; fi
+            grep -q "Local HTTP function URL is only allowed" /tmp/act4.log
+            echo "$1: local HTTP URL refused at activation"
+          done
+          set_vault_ref localtestrefaaaaaaaa > /dev/null
+          # Rien n'a été installé ni enregistré par ces échecs.
+          $db <<'SQL'
+          do $$
+          begin
+            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
+                   = '_guard_storage_upload', 'failed activation must leave the guard untouched';
+            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
+              'failed activation must not install the webhook';
+            assert not exists (select 1 from private.f05_activation), 'failed activation must not register an environment';
+          end $$;
+          SQL
+
+      - name: Phase 2 - activate (local-test), post-checks, SQL assertions, DB race
+        run: |
+          db="docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1"
+          activate() {
+            $db -v target_env=local-test -v expected_ref=localtestrefaaaaaaaa < supabase/activation/f05_activate_storage_validation.sql
+          }
+          activate
+          $db < supabase/activation/f05_post_activation_checks.sql
+          $db <<'SQL'
+          do $$
+          begin
+            assert (select target_env from private.f05_activation) = 'local-test', 'activation must be registered as local-test';
+            assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass
+                      and tgname in ('kaza-storage-content-validation', 'kaza-storage-content-validation-update')
+                      and tgenabled = 'O') = 2, 'insert and update webhook triggers must both be enabled';
+            assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass and not tgisinternal
+                      and tgname in ('guard_storage_upload', 'protect_objects_delete', 'update_objects_updated_at')
+                      and tgenabled = 'O') = 3, 'guard, delete protection and maintenance triggers must stay enabled';
+          end $$;
+          SQL
+          for f in guard_assertions state_machine_assertions target_assertions retry_assertions idempotence_assertions enqueue_failure_assertions; do
+            echo "== $f"
+            # Une seule exécution par fichier. Pas de pipe vers tee : sans `pipefail` (shell par défaut
+            # `bash -e`) un pipe masquerait le code de sortie de psql. Le log est conservé puis affiché.
+            if ! $db < "supabase/activation/ci/$f.sql" > "/tmp/ci-$f.log" 2>&1; then
+              cat "/tmp/ci-$f.log"
+              echo "::error::SQL assertions failed in $f.sql"
+              exit 1
+            fi
+            cat "/tmp/ci-$f.log"
+          done
+          # Un test non exécuté n'est jamais un succès : il est signalé en avertissement ET dans le résumé.
+          if grep -qh ENQUEUE_FAILURE_TEST_SKIPPED /tmp/ci-*.log; then
+            echo "::warning::NOT EXECUTED - pg_net enqueue-failure assertions (schema net is not owned by the CI role)"
+            mkdir -p reports
+            echo "pg_net enqueue-failure assertions (enqueue_failure_assertions.sql) were not executed: schema net is not owned by the CI role" >> reports/f05-not-executed.txt
+            echo "- **NOT EXECUTED**: pg_net enqueue-failure assertions (\`enqueue_failure_assertions.sql\`, schema \`net\` not owned by the CI role). This is not a pass." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Les scripts CI sont écrits sous Windows (core.autocrlf) : retirer d'éventuels CR avant de les exécuter sous Linux.
+          sed -i 's/\r$//' supabase/activation/ci/*.sh
+          bash supabase/activation/ci/race_validated_vs_rejected.sh supabase_db_kaza
+          bash supabase/activation/ci/race_dispatch_claim.sh supabase_db_kaza
+          # Rollback fail-closed (refus si pending/rejected présent, atomicité, réactivation à l'identique).
+          bash supabase/activation/ci/rollback_assertions.sh supabase_db_kaza
+
+          # Rollback puis réactivation : les invariants d'environnement sont conservés.
+          # (target_assertions et guard_assertions sont volontairement rejoués APRES la réactivation,
+          # en plus de leur exécution unique dans la boucle ci-dessus : preuve de conservation.)
+          $db < supabase/activation/f05_rollback_storage_validation.sql
+          $db <<'SQL'
+          do $$
+          declare v_msg text;
+          begin
+            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
+                   = '_guard_storage_upload', 'rollback must restore the original guard';
+            assert not exists (select 1 from pg_trigger where tgname like 'kaza-storage-content-validation%' and not tgisinternal),
+              'rollback must remove both webhook triggers';
+            assert not exists (select 1 from private.f05_activation), 'rollback must clear the registered environment';
+            begin
+              perform private.storage_validation_target();
+              raise exception 'target must be refused after rollback';
+            exception when others then
+              v_msg := sqlerrm;
+            end;
+            assert v_msg like 'Storage validation is not activated%', 'unexpected post-rollback target error: ' || v_msg;
+          end $$;
+          SQL
+          activate
+          activate
+          $db < supabase/activation/ci/target_assertions.sql
+          $db < supabase/activation/ci/guard_assertions.sql
+          $db <<'SQL'
+          do $$
+          begin
+            assert (select target_env from private.f05_activation) = 'local-test', 'reactivation must re-register local-test';
+            assert (select count(*) from cron.job where jobname = 'storage-validation-retry-every-minute') = 1, 'exactly one retry job';
+          end $$;
+          SQL
+
+      - name: F05 integration tests - controlled states (webhook paused) + Edge validator driven directly
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.F05_API_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.F05_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ env.F05_SERVICE_KEY }}
           KAZA_F05_ACTIVATED: '1'
+          KAZA_F05_WEBHOOK_PAUSED: '1'
+          KAZA_F05_DELETE_BLOCKER: '1'
+          KAZA_F05_PDF_FIXTURE: ${{ github.workspace }}/reports/f05-legacy-pdf-fixture.json
           KAZA_F05_EDGE_URL: ${{ env.F05_API_URL }}/functions/v1/validate-file-upload
           KAZA_F05_WEBHOOK_SECRET: ${{ env.F05_WEBHOOK_SECRET }}
         run: |
           mkdir -p reports
+          pg() { docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 "$@"; }
+          # Réactivation garantie (succès, échec ou annulation du shell) ; SEULS les deux triggers du
+          # webhook sont suspendus : garde F05, protect_objects_delete et triggers de maintenance restent actifs.
+          resume() {
+            pg -c 'alter table storage.objects enable trigger "kaza-storage-content-validation"' \
+               -c 'alter table storage.objects enable trigger "kaza-storage-content-validation-update"'
+          }
+          trap resume EXIT
+          pg -c 'alter table storage.objects disable trigger "kaza-storage-content-validation"' \
+             -c 'alter table storage.objects disable trigger "kaza-storage-content-validation-update"'
+          pg <<'SQL'
+          do $$
+          begin
+            assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass and not tgisinternal
+                      and tgenabled = 'D') = 2, 'exactly the two webhook triggers must be disabled';
+            assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass and not tgisinternal
+                      and tgname in ('guard_storage_upload', 'protect_objects_delete', 'update_objects_updated_at')
+                      and tgenabled = 'O') = 3, 'guard, delete protection and maintenance must stay enabled';
+          end $$;
+          SQL
+          set +e
           npx vitest run -c vitest.config.integration.ts \
             tests/integration/security/storage-upload-validation.test.ts \
             tests/integration/security/storage-validation-edge.test.ts \
-            --reporter=default --reporter=junit --outputFile.junit=reports/f05-integration-junit.xml
+            --reporter=default --reporter=junit --outputFile.junit=reports/f05-controlled-junit.xml
+          rc=$?
+          resume
+          trap - EXIT
+          exit $rc
+
+      - name: F05 integration tests - AUTOMATIC path (Storage -> pg_net -> Edge, no direct call)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.F05_API_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.F05_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.F05_SERVICE_KEY }}
+          KAZA_F05_ACTIVATED: '1'
+          KAZA_F05_AUTOMATIC: '1'
+          KAZA_F05_TERMINAL_TIMEOUT_MS: '90000'
+        run: |
+          mkdir -p reports
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 -X -q -t -A <<'SQL'
+          do $$
+          begin
+            assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass
+                      and tgname like 'kaza-storage-content-validation%' and tgenabled = 'O') = 2,
+              'both webhook triggers must be enabled for the automatic path';
+          end $$;
+          SQL
+          npx vitest run -c vitest.config.integration.ts \
+            tests/integration/security/storage-validation-automatic.test.ts \
+            --reporter=default --reporter=junit --outputFile.junit=reports/f05-automatic-junit.xml
+
+      - name: No skipped F05 integration test (a skip is not a pass)
+        run: |
+          total=0
+          for f in reports/f05-controlled-junit.xml reports/f05-automatic-junit.xml; do
+            [ -s "$f" ] || { echo "::error::missing JUnit report $f"; exit 1; }
+            n=$(grep -c '<skipped' "$f" || true)
+            echo "$f: skipped test cases = $n"
+            total=$((total + n))
+          done
+          if [ "$total" -ne 0 ]; then
+            echo "::error::$total F05 integration test(s) were skipped (missing environment flag or fixture); they are NOT counted as passed"
+            exit 1
+          fi
+
+      - name: Final gate - a run with a non-executed mandatory test is NOT green
+        run: |
+          if [ -s reports/f05-not-executed.txt ]; then
+            echo "::error::Mandatory F05 assertions were NOT executed, the run cannot be reported as passed:"
+            cat reports/f05-not-executed.txt
+            echo "- **FAILED GATE**: mandatory assertions not executed (see reports/f05-not-executed.txt). This run is not a pass." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "no mandatory F05 assertion was skipped"
+
+      - name: Edge and pg_net diagnostics (sanitized, on failure only)
+        if: failure()
+        run: |
+          echo "--- edge log (tail, redacted)"
+          sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+|sb_publishable_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -80 || true
+          echo "--- pg_net responses (status only)"
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -X -q -t -A \
+            -c "select id, status_code, timed_out, left(coalesce(error_msg,''), 120) from net._http_response order by id desc limit 15" || true
+          echo "--- validation states (names hidden)"
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -X -q -t -A \
+            -c "select status, count(*), max(retry_attempts), count(*) filter (where deleted_at is null) from public.storage_upload_validations group by status" || true
 
       - name: Summary
         if: always()

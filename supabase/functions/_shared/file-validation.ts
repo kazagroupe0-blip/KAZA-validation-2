@@ -1,5 +1,6 @@
 export const MIN_VALIDATED_FILE_SIZE_BYTES = 12;
-export const MAX_VALIDATED_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+// Plafond fonctionnel F05 : 5 MiB par fichier (aligne sur [storage] file_size_limit = "5MiB").
+export const MAX_VALIDATED_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 export type AllowedUploadType = 'JPEG' | 'PNG' | 'PDF' | 'WEBP';
 

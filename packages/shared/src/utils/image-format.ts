@@ -47,3 +47,7 @@ export const IMAGE_EXTENSION_BY_MIME: Record<DetectedImageMime, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
 };
+
+/** Plafond fonctionnel F05 par fichier (residence-photos et chat-files) : 5 MiB. */
+export const MAX_UPLOAD_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+export const MIN_UPLOAD_FILE_SIZE_BYTES = 12;

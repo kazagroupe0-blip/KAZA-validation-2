@@ -1,7 +1,8 @@
 -- KAZA F05 — PHASE 2 : ACTIVATION CONTRÔLÉE (hors supabase/migrations, jamais rejouée par db reset).
 --
 -- Usage (psql, une base à la fois, par un opérateur) :
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v target_env=<production|test|local-test> -v expected_ref=<ref> \n--        -f supabase/activation/f05_activate_storage_validation.sql
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v target_env=<production|test|local-test> -v expected_ref=<ref> \
+--        -f supabase/activation/f05_activate_storage_validation.sql
 --
 -- Prérequis : migration 20261010175125 appliquée, fonction Edge déployée et vérifiée avec
 -- supabase/activation/preflight-edge.sh, entrées Vault créées (voir docs/audits).
@@ -62,6 +63,13 @@ begin
     raise exception 'F05 activation: pg_cron is required';
   end if;
 
+  if not exists (
+    select 1 from pg_attribute
+     where attrelid = 'storage.objects'::regclass and attname = 'version' and not attisdropped
+  ) then
+    raise exception 'F05 activation: storage.objects.version is required to detect object replacement';
+  end if;
+
   if to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is null then
     raise exception 'F05 activation: pg_net (net.http_post) is required';
   end if;
@@ -71,15 +79,25 @@ begin
     raise exception 'F05 activation: expected storage buckets are missing';
   end if;
 
-  -- Valide secret (>= 32), URL (forme + ref de l'URL = ref attendu en Vault).
-  perform private.storage_validation_target();
-
   execute 'select decrypted_secret from vault.decrypted_secrets where name = $1'
     into v_vault_ref using 'kaza_storage_validation_expected_project_ref';
 
   if v_vault_ref is distinct from v_ref then
     raise exception 'F05 activation: Vault expected project ref differs from the expected_ref argument';
   end if;
+
+  -- Enregistre l'environnement d'activation (dans la transaction). La cible locale HTTP n'est
+  -- acceptée par private.storage_validation_target() que si cet enregistrement vaut local-test.
+  insert into private.f05_activation (singleton, target_env, project_ref, activated_at)
+  values (true, v_env, v_ref, now())
+  on conflict (singleton) do update
+    set target_env = excluded.target_env,
+        project_ref = excluded.project_ref,
+        activated_at = excluded.activated_at;
+
+  -- Valide secret (>= 32), URL (forme + ref de l'URL = ref attendu en Vault), clé apikey
+  -- facultative (anon/publishable uniquement) et règle d'URL locale selon l'environnement.
+  perform private.storage_validation_target();
 
   if not exists (
     select 1 from pg_trigger
@@ -98,13 +116,36 @@ create trigger guard_storage_upload
   for each row
   execute function public._guard_storage_upload_f05();
 
--- 2) Webhook dédié (remplace le webhook legacy et son Authorization en clair).
+-- 2) Webhook dédié (remplace le webhook legacy et son Authorization en clair). Uniquement pour
+--    l'insertion définitive (metadata.size) : la ligne provisoire du contrôle de permission
+--    de Storage n'envoie aucune requête.
 drop trigger if exists "kaza-storage-content-validation" on storage.objects;
 
 create trigger "kaza-storage-content-validation"
   after insert on storage.objects
   for each row
-  when (new.bucket_id in ('residence-photos', 'chat-files'))
+  when (new.bucket_id in ('residence-photos', 'chat-files') and (new.metadata->>'size') is not null)
+  execute function private.dispatch_storage_validation_webhook();
+
+-- Remplacement d'un objet (upload avec upsert => INSERT ... ON CONFLICT DO UPDATE) : AFTER INSERT ne
+-- se déclenche pas, seul l'UPDATE. Limité aux écritures définitives qui changent le CONTENU (version,
+-- eTag ou taille ; une mise à jour de métadonnées ordinaires ne déclenche rien), size présent. Les
+-- doublons d'une même génération sont écartés par la revendication atomique du dispatch. Le webhook n'écrit jamais dans storage.objects : pas de boucle. Le dispatch
+-- ignore l'UPDATE si la garde n'a pas remis l'état à pending.
+drop trigger if exists "kaza-storage-content-validation-update" on storage.objects;
+
+create trigger "kaza-storage-content-validation-update"
+  after update on storage.objects
+  for each row
+  when (
+    new.bucket_id in ('residence-photos', 'chat-files')
+    and (new.metadata->>'size') is not null
+    and (
+      new.version is distinct from old.version
+      or (new.metadata->>'eTag') is distinct from (old.metadata->>'eTag')
+      or (new.metadata->>'size') is distinct from (old.metadata->>'size')
+    )
+  )
   execute function private.dispatch_storage_validation_webhook();
 
 do $cron$

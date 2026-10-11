@@ -13,12 +13,14 @@ import {
  *
  * Ces tests exigent une base locale sur laquelle l'ACTIVATION F05 a été appliquée
  * (supabase/activation/f05_activate_storage_validation.sql, env local-test, avec des
- * entrées Vault locales jetables). Ils sont ignorés tant que KAZA_F05_ACTIVATED != 1.
- * ATTENTION : ce fichier a été écrit sans pouvoir être exécuté (Docker indisponible
- * lors de sa rédaction) ; il doit être validé lors de la première exécution réelle.
- * Le « webhook » est simulé : l'état est basculé en service_role comme le ferait la fonction Edge.
+ * entrées Vault locales jetables) ET le trigger webhook MIS EN PAUSE par la CI
+ * (KAZA_F05_WEBHOOK_PAUSED=1) : les états pending/validated/rejected sont pilotés à la main
+ * en service_role pour tester les règles d'accès de façon déterministe. Le trajet automatique
+ * réel est couvert par storage-validation-automatic.test.ts.
+ * Ignorés tant que KAZA_F05_ACTIVATED != 1 ou KAZA_F05_WEBHOOK_PAUSED != 1.
  */
-const enabled = process.env.KAZA_F05_ACTIVATED === '1';
+const enabled =
+  process.env.KAZA_F05_ACTIVATED === '1' && process.env.KAZA_F05_WEBHOOK_PAUSED === '1';
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'http://localhost:54321';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
@@ -28,8 +30,8 @@ const PDF = Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d, ...new Array(32).fill
 describe.skipIf(!enabled)('F05 storage upload validation (activated database required)', () => {
   let owner: any;
   let other: any;
-  let ownerClient: ReturnType<typeof createClient>;
-  let otherClient: ReturnType<typeof createClient>;
+  let ownerClient: any;
+  let otherClient: any;
   const created: { bucket: string; name: string }[] = [];
 
   const clientFor = (token: string) =>
@@ -51,8 +53,9 @@ describe.skipIf(!enabled)('F05 storage upload validation (activated database req
     await deleteTestUser(other.user.id);
   });
 
-  async function upload(client: typeof ownerClient, bucket: string, name: string, bytes: Uint8Array, contentType: string) {
+  async function upload(client: any, bucket: string, name: string, bytes: Uint8Array, contentType: string) {
     const res = await client.storage.from(bucket).upload(name, bytes, { contentType, upsert: false });
+    // Le fixture n'est enregistré pour nettoyage qu'après une création réussie.
     if (!res.error) created.push({ bucket, name });
     return res;
   }
@@ -72,10 +75,11 @@ describe.skipIf(!enabled)('F05 storage upload validation (activated database req
 
   it('allows the owner (and only the owner) once validated', async () => {
     const name = `${owner.user.id}/valid-${Date.now()}.jpg`;
-    await upload(ownerClient, 'chat-files', name, JPEG, 'image/jpeg');
-    await supabaseAdmin.from('storage_upload_validations')
+    expect((await upload(ownerClient, 'chat-files', name, JPEG, 'image/jpeg')).error).toBeNull();
+    const validated = await supabaseAdmin.from('storage_upload_validations')
       .update({ status: 'validated', validated_at: new Date().toISOString() })
       .eq('bucket_id', 'chat-files').eq('object_name', name);
+    expect(validated.error).toBeNull();
 
     expect((await ownerClient.storage.from('chat-files').createSignedUrl(name, 60)).data?.signedUrl).toBeTruthy();
     expect((await otherClient.storage.from('chat-files').createSignedUrl(name, 60)).data?.signedUrl).toBeUndefined();
@@ -83,10 +87,11 @@ describe.skipIf(!enabled)('F05 storage upload validation (activated database req
 
   it('keeps a rejected object unreadable', async () => {
     const name = `${owner.user.id}/rejected-${Date.now()}.jpg`;
-    await upload(ownerClient, 'chat-files', name, JPEG, 'image/jpeg');
-    await supabaseAdmin.from('storage_upload_validations')
+    expect((await upload(ownerClient, 'chat-files', name, JPEG, 'image/jpeg')).error).toBeNull();
+    const rejected = await supabaseAdmin.from('storage_upload_validations')
       .update({ status: 'rejected', rejection_reason: 'test' })
       .eq('bucket_id', 'chat-files').eq('object_name', name);
+    expect(rejected.error).toBeNull();
     expect((await ownerClient.storage.from('chat-files').createSignedUrl(name, 60)).data?.signedUrl).toBeUndefined();
   });
 
@@ -104,7 +109,7 @@ describe.skipIf(!enabled)('F05 storage upload validation (activated database req
 
   it('does not let a client write validation states', async () => {
     const name = `${owner.user.id}/forge-${Date.now()}.jpg`;
-    await upload(ownerClient, 'chat-files', name, JPEG, 'image/jpeg');
+    expect((await upload(ownerClient, 'chat-files', name, JPEG, 'image/jpeg')).error).toBeNull();
     const { data } = await ownerClient.from('storage_upload_validations')
       .update({ status: 'validated', validated_at: new Date().toISOString() })
       .eq('bucket_id', 'chat-files').eq('object_name', name).select();

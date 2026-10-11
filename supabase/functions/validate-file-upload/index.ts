@@ -11,55 +11,43 @@ import { isUploadBucket, validateUploadContent } from '../_shared/file-validatio
  * verify_jwt = false : l'authentification est entièrement faite ici (fail-closed).
  * Règles par bucket : residence-photos = images ; chat-files = images + PDF.
  *
- * Si le fichier est invalide → suppression + log.
- * Si la lecture ou la suppression échoue → erreur non-2xx, jamais "validated".
+ * Machine d'états (public.storage_upload_validations) :
+ *   pending   -> validated | rejected   (transitions conditionnelles .eq('status','pending'))
+ *   validated -> jamais modifié ni supprimé (rejeu = alreadyProcessed)
+ *   rejected  -> jamais relu comme valide ; un rejeu ne fait que (re)tenter la suppression
+ *                de l'objet tant que deleted_at est vide.
+ * Génération : chaque transition conditionnelle porte aussi sur la génération de contenu lue au
+ * début du traitement (colonne generation). Si l'objet a été remplacé entre-temps (nouvelle
+ * génération, état remis à pending par la garde SQL), le verdict calculé sur l'ancien contenu
+ * n'écrit rien : il ne peut ni valider ni rejeter le nouveau contenu.
+ * Aucune écriture n'utilise upsert : un événement tardif ou concurrent ne peut donc pas
+ * renverser un état terminal (le trigger SQL storage_validation_state_guard le refuse aussi).
  */
-async function persistValidationStatus(
-  supabase: ReturnType<typeof getAdminClient>,
+type AdminClient = ReturnType<typeof getAdminClient>;
+
+// Filtre de génération : égalité si la génération est connue, IS NULL sinon (états antérieurs).
+// deno-lint-ignore no-explicit-any
+function withGeneration<T extends { eq: (c: string, v: string) => any; is: (c: string, v: null) => any }>(
+  query: T,
+  generation: string | null,
+) {
+  return generation === null ? query.is('generation', null) : query.eq('generation', generation);
+}
+
+/** Passe pending -> validated uniquement. */
+async function markValidated(
+  supabase: AdminClient,
   input: {
     bucket: string;
     path: string;
-    status: 'pending' | 'validated' | 'rejected';
-    declaredMime?: string | null;
-    detectedMime?: string | null;
-    byteSize?: number | null;
-    reason?: string | null;
+    generation: string | null;
+    declaredMime: string;
+    detectedMime: string;
+    byteSize: number;
   },
-): Promise<boolean> {
-  const { error } = await supabase
-    .from('storage_upload_validations')
-    .upsert({
-      bucket_id: input.bucket,
-      object_name: input.path,
-      status: input.status,
-      declared_mime: input.declaredMime ?? null,
-      detected_mime: input.detectedMime ?? null,
-      byte_size: input.byteSize ?? null,
-      rejection_reason: input.reason ?? null,
-      validated_at: input.status === 'validated' ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'bucket_id,object_name' });
-
-  if (error) {
-    console.error(
-      `[validate-upload] Could not persist state for ${input.bucket}/${input.path}: ${error.message}`,
-    );
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Passe pending -> validated uniquement. Un état déjà rejeté ou validé n'est
- * jamais écrasé (rejeu de webhook, course avec la reprise automatique).
- */
-async function markValidated(
-  supabase: ReturnType<typeof getAdminClient>,
-  input: { bucket: string; path: string; declaredMime: string; detectedMime: string; byteSize: number },
 ): Promise<'validated' | 'not-pending' | 'error'> {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  const { data, error } = await withGeneration(supabase
     .from('storage_upload_validations')
     .update({
       status: 'validated',
@@ -72,7 +60,7 @@ async function markValidated(
     })
     .eq('bucket_id', input.bucket)
     .eq('object_name', input.path)
-    .eq('status', 'pending')
+    .eq('status', 'pending'), input.generation)
     .select('object_name');
 
   if (error) {
@@ -85,26 +73,57 @@ async function markValidated(
   return data && data.length === 1 ? 'validated' : 'not-pending';
 }
 
-async function rejectAndDelete(
-  supabase: ReturnType<typeof getAdminClient>,
+/** Passe pending -> rejected uniquement (jamais depuis validated). */
+async function markRejected(
+  supabase: AdminClient,
+  input: { bucket: string; path: string; generation: string | null; reason: string },
+): Promise<'rejected' | 'not-pending' | 'error'> {
+  const { data, error } = await withGeneration(supabase
+    .from('storage_upload_validations')
+    .update({
+      status: 'rejected',
+      rejection_reason: input.reason,
+      validated_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('bucket_id', input.bucket)
+    .eq('object_name', input.path)
+    .eq('status', 'pending'), input.generation)
+    .select('object_name');
+
+  if (error) {
+    console.error(
+      `[validate-upload] Could not persist rejection for ${input.bucket}/${input.path}: ${error.message}`,
+    );
+    return 'error';
+  }
+
+  return data && data.length === 1 ? 'rejected' : 'not-pending';
+}
+
+/**
+ * Supprime l'objet d'un état DÉJÀ rejected puis enregistre la suppression.
+ * Idempotent : réessayable par rejeu du webhook ou par la reprise SQL.
+ */
+async function deleteRejectedObject(
+  supabase: AdminClient,
   bucket: string,
   path: string,
-  reason: string,
+  reason: string | null,
   origin: string | null,
 ) {
-  const stateSaved = await persistValidationStatus(supabase, {
-    bucket,
-    path,
-    status: 'rejected',
-    reason,
-  });
-
   const { error } = await supabase.storage.from(bucket).remove([path]);
 
   if (error) {
     console.error(
       `[validate-upload] DELETE failed after rejection: ${bucket}/${path} — ${error.message}`,
     );
+    await supabase
+      .from('storage_upload_validations')
+      .update({ last_error: 'storage deletion failed', updated_at: new Date().toISOString() })
+      .eq('bucket_id', bucket)
+      .eq('object_name', path)
+      .eq('status', 'rejected');
     return jsonResponse(
       { ok: false, deleted: false, retryable: true, reason: 'validation cleanup failed' },
       503,
@@ -112,7 +131,19 @@ async function rejectAndDelete(
     );
   }
 
-  if (!stateSaved) {
+  const now = new Date().toISOString();
+  const { error: markErr } = await supabase
+    .from('storage_upload_validations')
+    .update({ deleted_at: now, last_error: null, updated_at: now })
+    .eq('bucket_id', bucket)
+    .eq('object_name', path)
+    .eq('status', 'rejected')
+    .is('deleted_at', null);
+
+  if (markErr) {
+    console.error(
+      `[validate-upload] Could not record deletion for ${bucket}/${path}: ${markErr.message}`,
+    );
     return jsonResponse(
       { ok: false, deleted: true, retryable: true, reason: 'validation state write failed' },
       503,
@@ -120,8 +151,59 @@ async function rejectAndDelete(
     );
   }
 
-  console.warn(`[validate-upload] REJECTED: ${bucket}/${path} — ${reason}`);
-  return jsonResponse({ ok: false, deleted: true, reason }, 200, origin);
+  console.warn(`[validate-upload] REJECTED: ${bucket}/${path} — ${reason ?? 'previously rejected'}`);
+  return jsonResponse({ ok: false, deleted: true, reason: reason ?? 'rejected' }, 200, origin);
+}
+
+async function rejectAndDelete(
+  supabase: AdminClient,
+  bucket: string,
+  path: string,
+  generation: string | null,
+  reason: string,
+  origin: string | null,
+) {
+  const outcome = await markRejected(supabase, { bucket, path, generation, reason });
+
+  if (outcome === 'error') {
+    return jsonResponse(
+      { ok: false, deleted: false, retryable: true, reason: 'validation state write failed' },
+      503,
+      origin,
+    );
+  }
+
+  if (outcome === 'not-pending') {
+    // Un autre traitement a déjà tranché. Un objet validé n'est JAMAIS supprimé ici.
+    const { data: current, error } = await supabase
+      .from('storage_upload_validations')
+      .select('status, deleted_at')
+      .eq('bucket_id', bucket)
+      .eq('object_name', path)
+      .maybeSingle();
+
+    if (error || !current) {
+      return jsonResponse(
+        { ok: false, validated: false, retryable: true, reason: 'validation state read failed' },
+        503,
+        origin,
+      );
+    }
+
+    if (current.status !== 'rejected') {
+      return jsonResponse(
+        { ok: false, validated: false, retryable: false, reason: 'state changed during validation' },
+        409,
+        origin,
+      );
+    }
+
+    if (current.deleted_at) {
+      return jsonResponse({ ok: false, validated: false, alreadyProcessed: true }, 200, origin);
+    }
+  }
+
+  return deleteRejectedObject(supabase, bucket, path, reason, origin);
 }
 
 Deno.serve(async (req: Request) => {
@@ -174,11 +256,11 @@ Deno.serve(async (req: Request) => {
 
     const supabase = getAdminClient();
 
-    // Idempotence : seul un état pending est (re)traité. Aucune ligne d'état =
+    // Idempotence : seul un état pending est (re)validé. Aucune ligne d'état =
     // événement inattendu, jamais présenté comme validé.
     const { data: stateRow, error: stateErr } = await supabase
       .from('storage_upload_validations')
-      .select('status')
+      .select('status, deleted_at, generation')
       .eq('bucket_id', bucket)
       .eq('object_name', path)
       .maybeSingle();
@@ -205,7 +287,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (stateRow.status === 'rejected') {
-      return jsonResponse({ ok: false, validated: false, alreadyProcessed: true }, 200, origin);
+      // Rejeu sur un objet rejeté : jamais relu comme valide. Tant que la suppression n'est pas
+      // enregistrée, on la retente ; ensuite le rejeu est un simple accusé.
+      if (stateRow.deleted_at) {
+        return jsonResponse({ ok: false, validated: false, alreadyProcessed: true }, 200, origin);
+      }
+      return deleteRejectedObject(supabase, bucket, path, null, origin);
     }
 
     const { data: fileData, error: dlErr } = await supabase.storage
@@ -231,12 +318,13 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!verdict.ok) {
-      return rejectAndDelete(supabase, bucket, path, verdict.reason, origin);
+      return rejectAndDelete(supabase, bucket, path, stateRow.generation ?? null, verdict.reason, origin);
     }
 
     const outcome = await markValidated(supabase, {
       bucket,
       path,
+      generation: stateRow.generation ?? null,
       declaredMime: verdict.mime,
       detectedMime: verdict.mime,
       byteSize: bytes.length,

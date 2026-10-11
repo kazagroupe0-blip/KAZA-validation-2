@@ -8,7 +8,7 @@ import type {
 import { normalizeError, getSignedStorageUrl } from '../supabase-api';
 import { requireUser } from '../require-user';
 
-const STORAGE_MAX = 8 * 1024 * 1024;
+const STORAGE_MAX = 5 * 1024 * 1024; // 5 Mo (plafond F05)
 
 export async function openConversation(residenceId: string): Promise<string> {
   const { data, error } = await supabase.rpc('open_conversation', {
@@ -155,7 +155,7 @@ export async function listMyVisits(): Promise<Visit[]> {
 
 export async function uploadChatFile(userId: string, file: File): Promise<string> {
   if (file.size > STORAGE_MAX) {
-    throw new Error('Fichier trop volumineux (max 8 Mo)');
+    throw new Error('Fichier trop volumineux (max 5 Mo)');
   }
   const path = `${userId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`;
   const { error } = await supabase.storage.from('chat-files').upload(path, file, {

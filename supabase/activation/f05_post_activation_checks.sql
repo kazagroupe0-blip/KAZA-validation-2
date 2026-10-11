@@ -21,6 +21,13 @@ select 'stuck_pending_over_10min' as check_name, count(*)
   from public.storage_upload_validations
  where status = 'pending' and created_at < now() - interval '10 minutes';
 
+select 'registered_activation' as check_name, target_env, project_ref
+  from private.f05_activation;
+
+select 'rejected_not_deleted' as check_name, count(*)
+  from public.storage_upload_validations
+ where status = 'rejected' and deleted_at is null;
+
 -- Attendu : 'kaza-storage-content-validation' -> dispatch_storage_validation_webhook,
 -- 'guard_storage_upload' -> _guard_storage_upload_f05, protect_objects_delete et
--- update_objects_updated_at toujours présents, un job cron actif, stuck_pending = 0.
+-- update_objects_updated_at toujours présents, un job cron actif, stuck_pending = 0, rejected_not_deleted = 0 (sinon la reprise ou une suppression manuelle est requise), une ligne registered_activation.

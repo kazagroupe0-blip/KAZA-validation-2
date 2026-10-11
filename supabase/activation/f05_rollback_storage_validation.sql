@@ -1,16 +1,59 @@
--- KAZA F05 — ROLLBACK de l'activation (PHASE 2). À exécuter avec psql, une base à la fois :
+-- KAZA F05 — ROLLBACK de l'activation (PHASE 2), FAIL-CLOSED. À exécuter avec psql, une base à la fois :
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/activation/f05_rollback_storage_validation.sql
 --
 -- Restaure la garde d'origine, les politiques de lecture antérieures à F05 et retire le webhook
 -- dédié et la reprise cron. Il NE recrée PAS l'ancien webhook legacy (son jeton ne doit pas être
 -- réintroduit) : après rollback il n'y a plus de validation de contenu tant que F05 n'est pas
 -- réactivé. Les lignes de public.storage_upload_validations sont conservées (preuve/audit).
--- ATTENTION : après rollback, un objet « rejected » dont la suppression a échoué redevient lisible
--- par les règles historiques : la liste en fin de script doit être traitée (suppression manuelle).
+--
+-- SÉCURITÉ : les politiques historiques ignorent l'état de validation. Le rollback est donc REFUSÉ
+-- (exception, transaction annulée, F05 intégralement conservé) tant qu'un objet réellement présent
+-- dans storage.objects a un état pending ou rejected. La comparaison porte sur
+-- (bucket_id, name) = (bucket_id, object_name) ; deleted_at n'est PAS une preuve d'absence.
+-- Aucun fichier n'est supprimé automatiquement. Marche à suivre quand il est refusé :
+--   * pending : attendre la validation (ou la reprise cron), ou supprimer l'objet via l'API Storage ;
+--   * rejected : relancer la suppression via l'API Storage (Edge validate-file-upload au rejeu).
+-- Les objets historiques SANS ligne d'état ne bloquent pas le rollback (migration progressive).
+-- La table d'états est verrouillée (SHARE) pour la durée de la transaction : aucun nouvel envoi
+-- ni changement d'état ne peut s'intercaler entre le contrôle et la restauration des politiques.
 
+\set ON_ERROR_STOP on
 begin;
 
+lock table public.storage_upload_validations in share mode;
+
+do $rollback_guard$
+declare
+  v_blocked integer;
+  v_pending integer;
+  v_rejected integer;
+begin
+  select count(*),
+         count(*) filter (where v.status = 'pending'),
+         count(*) filter (where v.status = 'rejected')
+    into v_blocked, v_pending, v_rejected
+    from public.storage_upload_validations v
+    join storage.objects o
+      on o.bucket_id = v.bucket_id
+     and o.name = v.object_name
+   where v.status is distinct from 'validated';
+
+  if v_blocked > 0 then
+    raise exception
+      'F05 rollback refused: % object(s) still present in storage.objects are not validated (% pending, % rejected). Nothing was changed.',
+      v_blocked, v_pending, v_rejected
+      using errcode = 'check_violation',
+            hint = 'Delete these objects through the Storage API (or wait for validation), then re-run the rollback. Query: select v.bucket_id, v.object_name, v.status from public.storage_upload_validations v join storage.objects o on o.bucket_id = v.bucket_id and o.name = v.object_name where v.status <> ''validated''';
+  end if;
+end;
+$rollback_guard$;
+
 drop trigger if exists "kaza-storage-content-validation" on storage.objects;
+drop trigger if exists "kaza-storage-content-validation-update" on storage.objects;
+
+-- Retire l'enregistrement d'environnement : plus aucune cible (locale ou non) n'est valide
+-- tant que l'activation n'est pas rejouée.
+delete from private.f05_activation;
 
 drop trigger if exists guard_storage_upload on storage.objects;
 create trigger guard_storage_upload
@@ -80,7 +123,7 @@ create policy "chat-files-read-owner" on storage.objects
 
 commit;
 
-select v.bucket_id, v.object_name, v.status
+select v.bucket_id, v.object_name, v.status, v.deleted_at
   from public.storage_upload_validations v
   join storage.objects o on o.bucket_id = v.bucket_id and o.name = v.object_name
  where v.status <> 'validated'

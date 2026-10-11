@@ -1,4 +1,10 @@
-import { detectImageMime, IMAGE_EXTENSION_BY_MIME, type DetectedImageMime } from '@kaza/shared';
+import {
+  detectImageMime,
+  IMAGE_EXTENSION_BY_MIME,
+  MAX_UPLOAD_FILE_SIZE_BYTES,
+  MIN_UPLOAD_FILE_SIZE_BYTES,
+  type DetectedImageMime,
+} from '@kaza/shared';
 import { supabase } from '@/lib/supabase';
 
 export interface PreparedImage {
@@ -19,6 +25,12 @@ export async function prepareImageForUpload(uri: string): Promise<PreparedImage>
   }
 
   const bytes = await response.arrayBuffer();
+  if (bytes.byteLength < MIN_UPLOAD_FILE_SIZE_BYTES) {
+    throw new Error("L'image sélectionnée est vide ou illisible.");
+  }
+  if (bytes.byteLength > MAX_UPLOAD_FILE_SIZE_BYTES) {
+    throw new Error("L'image est trop volumineuse (5 Mo maximum).");
+  }
   const mime = detectImageMime(new Uint8Array(bytes));
   if (!mime) {
     throw new Error("Format d'image non pris en charge (JPEG, PNG ou WEBP requis).");

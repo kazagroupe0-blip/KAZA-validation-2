@@ -29,7 +29,7 @@ const initial = {
 };
 
 const MAX_PHOTOS = 12;
-const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8 Mo
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 Mo (plafond F05)
 
 function validateForm(form: typeof initial): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
@@ -160,7 +160,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
         const results = await Promise.allSettled(
           batch.map(async (file) => {
             if (file.size < 12 || file.size > MAX_FILE_SIZE) {
-              throw new Error(`${file.name} : taille non autorisee (12 octets a 8 Mo).`);
+              throw new Error(`${file.name} : taille non autorisee (12 octets a 5 Mo).`);
             }
 
             const contentType = file.type.toLowerCase().split(';', 1)[0]?.trim() ?? '';
@@ -318,7 +318,7 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
             />
           </label>
         </div>
-        <p className="mt-2 text-xs text-kaza-faint">Jusqu’à {MAX_PHOTOS} photos, 8 Mo max chacune. La première sert de couverture.</p>
+        <p className="mt-2 text-xs text-kaza-faint">Jusqu’à {MAX_PHOTOS} photos, 5 Mo max chacune. La première sert de couverture.</p>
       </section>
 
       <div className="grid gap-4 sm:grid-cols-2">

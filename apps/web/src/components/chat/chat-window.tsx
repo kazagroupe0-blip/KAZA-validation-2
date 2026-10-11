@@ -33,7 +33,7 @@ import {
   type RealtimeHealth,
 } from '@/lib/realtime-health';
 
-const STORAGE_MAX = 8 * 1024 * 1024;
+const STORAGE_MAX = 5 * 1024 * 1024; // 5 Mo (plafond F05)
 
 export function ChatWindow() {
   const { id } = useParams<{ id: string }>();
@@ -248,7 +248,7 @@ export function ChatWindow() {
     try {
       for (const file of files) {
         if (file.size < 12 || file.size > STORAGE_MAX) {
-          throw new Error(`${file.name} : taille non autorisee (12 octets a 8 Mo).`);
+          throw new Error(`${file.name} : taille non autorisee (12 octets a 5 Mo).`);
         }
 
         const contentType = file.type.toLowerCase().split(';', 1)[0]?.trim() ?? '';
