@@ -530,8 +530,10 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(wf).not.toMatch(/psql[^\n]*\|\s*tee/);
     expect(loop).not.toMatch(/\|\s*tee/);
     expect(loop).toContain('exit 1');
-    expect(wf).toContain('Using supabase_admin for pg_net enqueue-failure fault injection');
-    expect(wf).toContain('psql -U supabase_admin -d postgres');
+    expect(wf).toContain('SET ROLE supabase_admin;');
+    expect(wf).toContain('SET ROLE supabase_storage_admin;');
+    expect(wf).not.toContain('psql -U supabase_admin -d postgres');
+    expect(wf).not.toContain('psql -U supabase_storage_admin -d postgres');
     // seuls rejoues apres reactivation, volontairement et documentes
     expect(wf.match(/ci\/target_assertions\.sql/g)).toHaveLength(1); // le rejeu post-reactivation
     expect(wf).toContain('rejoues APRES la réactivation'.replace('rejoues', 'rejoués'));
@@ -566,8 +568,9 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(wf).toContain('trap resume EXIT');
     expect(wf).toContain("tgenabled = 'D') = 2");
     const controlled = wf.slice(wf.indexOf('name: F05 integration tests - controlled states'), wf.indexOf('name: F05 integration tests - AUTOMATIC path'));
-    expect(controlled).toContain('psql -U supabase_storage_admin -d postgres');
+    expect(controlled).toContain('SET ROLE supabase_storage_admin;');
     expect(controlled).toContain('must own storage.objects');
+    expect(controlled).not.toContain('psql -U supabase_storage_admin -d postgres');
   });
 
   it('runs the automatic-path tests with the webhook enabled and the direct tests with it paused', () => {

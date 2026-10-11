@@ -408,10 +408,10 @@ jobs:
             local name="$1"
             local sql_file="supabase/activation/ci/$name.sql"
             if [ "$name" = "enqueue_failure_assertions" ]; then
-              # pg_net owns schema net through supabase_admin in this disposable CI database.
-              # Use that local role only to simulate enqueue failure; never connect to production here.
-              echo "Using supabase_admin for pg_net enqueue-failure fault injection (ephemeral CI database only)"
-              docker exec -i supabase_db_kaza psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < "$sql_file"
+              # net is owned by supabase_admin. Assume that role inside the existing
+              # socket-authenticated session on this disposable CI database; no extra password is used.
+              echo "SET ROLE supabase_admin for pg_net enqueue-failure fault injection (ephemeral CI database only)"
+              { printf '%s\n' 'SET ROLE supabase_admin;'; cat "$sql_file"; } | $db
             else
               $db < "$sql_file"
             fi
@@ -489,34 +489,32 @@ jobs:
           KAZA_F05_WEBHOOK_SECRET: ${{ env.F05_WEBHOOK_SECRET }}
         run: |
           mkdir -p reports
-          # This disposable CI database uses supabase_storage_admin as owner of storage.objects.
-          # Trigger toggles require the table owner; the postgres role failed that ownership check.
-          pg() { docker exec -i supabase_db_kaza psql -U supabase_storage_admin -d postgres -v ON_ERROR_STOP=1 "$@"; }
+          # Use a socket-authenticated postgres session, then assume the table-owner role in this disposable DB.
+          pg() { docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 "$@"; }
           # Réactivation garantie (succès, échec ou annulation du shell) ; SEULS les deux triggers du
           # webhook sont suspendus : garde F05, protect_objects_delete et triggers de maintenance restent actifs.
           resume() {
-            pg -c 'alter table storage.objects enable trigger "kaza-storage-content-validation"' \
-               -c 'alter table storage.objects enable trigger "kaza-storage-content-validation-update"'
+            pg <<'SQL'
+          SET ROLE supabase_storage_admin;
+          ALTER TABLE storage.objects ENABLE TRIGGER "kaza-storage-content-validation";
+          ALTER TABLE storage.objects ENABLE TRIGGER "kaza-storage-content-validation-update";
+          SQL
           }
           trap resume EXIT
           pg <<'SQL'
-          do $
+          SET ROLE supabase_storage_admin;
+          ALTER TABLE storage.objects DISABLE TRIGGER "kaza-storage-content-validation";
+          ALTER TABLE storage.objects DISABLE TRIGGER "kaza-storage-content-validation-update";
+          DO $$
           begin
-            assert current_user = 'supabase_storage_admin', 'trigger-toggle step must use supabase_storage_admin';
+            assert current_user = 'supabase_storage_admin', 'trigger-toggle step must SET ROLE supabase_storage_admin';
             assert (select rolname from pg_roles where oid = (select relowner from pg_class where oid = 'storage.objects'::regclass)) = current_user,
               'trigger-toggle role must own storage.objects';
-          end $;
-          SQL
-          pg -c 'alter table storage.objects disable trigger "kaza-storage-content-validation"' \
-             -c 'alter table storage.objects disable trigger "kaza-storage-content-validation-update"'
-          pg <<'SQL'
-          do $$
-          begin
             assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass and not tgisinternal
                       and tgenabled = 'D') = 2, 'exactly the two webhook triggers must be disabled';
             assert (select count(*) from pg_trigger where tgrelid = 'storage.objects'::regclass and not tgisinternal
                       and tgname in ('guard_storage_upload', 'protect_objects_delete', 'update_objects_updated_at')
-                      and tgenabled = 'O') = 3, 'guard, delete protection and maintenance must stay enabled';
+                      and tgenabled = 'O') = 3, 'guard, delete protection and maintenance triggers must stay enabled';
           end $$;
           SQL
           set +e
