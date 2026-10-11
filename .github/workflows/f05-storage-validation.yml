@@ -1,0 +1,249 @@
+name: F05 Storage validation (targeted)
+
+# CI ciblée F05 : un seul job backend, pas d'E2E navigateur.
+# Tout s'exécute sur une pile Supabase LOCALE jetable du runner. Aucun supabase link / db push /
+# déploiement Edge / secret de production. Les secrets Vault sont générés à la volée, masqués,
+# et n'existent que dans ce runner.
+on:
+  push:
+    branches:
+      - security/F05-storage-hardening-20261011-ghb
+
+concurrency:
+  group: f05-storage-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  f05-backend:
+    name: F05 phase 1 + phase 2 + Edge validator
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.3.3
+
+      - name: Install Supabase CLI (pinned)
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/download/v2.114.0/supabase_linux_amd64.tar.gz -o /tmp/supabase.tar.gz
+          tar xzf /tmp/supabase.tar.gz -C /tmp
+          sudo mv /tmp/supabase /usr/local/bin/supabase
+          supabase --version
+
+      - name: Unit tests (Vitest)
+        run: mkdir -p reports && npx vitest run --reporter=default --reporter=junit --outputFile.junit=reports/unit-junit.xml
+
+      - name: Lint and typecheck Edge Functions
+        run: |
+          for f in supabase/functions/*/index.ts; do
+            echo "Checking $f"
+            deno lint "$f"
+            deno check --config supabase/functions/deno.json "$f"
+          done
+
+      - name: Login to Docker Hub (best effort)
+        continue-on-error: true
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::warning::Docker Hub credentials are not configured; continuing with anonymous image pulls."
+            exit 0
+          fi
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin \
+            || echo "::warning::Docker Hub login failed; continuing with anonymous image pulls."
+
+      - name: Start local Supabase stack
+        run: |
+          for i in 1 2 3 4; do
+            if supabase start; then break; fi
+            echo "supabase start (attempt $i) failed - retrying in 30s"
+            sleep 30
+          done
+          supabase status > /dev/null
+
+          env_vars=$(supabase status -o env)
+          anon_key=$(printf '%s\n' "$env_vars" | grep -iE '^anon_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+          service_key=$(printf '%s\n' "$env_vars" | grep -iE '^service_role_key=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+          api_url=$(printf '%s\n' "$env_vars" | grep -iE '^api_url=' | cut -d= -f2- | tr -d '"' | tr -d '[:space:]')
+
+          if [ -z "$anon_key" ] || [ -z "$service_key" ] || [ -z "$api_url" ]; then
+            echo "::error::Could not read local Supabase credentials"
+            exit 1
+          fi
+
+          echo "::add-mask::$anon_key"
+          echo "::add-mask::$service_key"
+          {
+            echo "F05_ANON_KEY=$anon_key"
+            echo "F05_SERVICE_KEY=$service_key"
+            echo "F05_API_URL=$api_url"
+          } >> "$GITHUB_ENV"
+
+      - name: Phase 1 - supabase db reset (migrations only, no secrets)
+        run: |
+          supabase db reset
+          cat > /tmp/f05-phase1-check.sql <<'SQL'
+          do $$
+          begin
+            assert to_regclass('public.storage_upload_validations') is not null, 'phase 1 table missing';
+            assert to_regprocedure('public._guard_storage_upload_f05()') is not null, 'f05 guard missing';
+            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
+              'phase 1 must not install the webhook trigger';
+            assert (select tgfoid::regproc::text from pg_trigger
+                     where tgrelid = 'storage.objects'::regclass and tgname = 'guard_storage_upload')
+                   = 'public._guard_storage_upload', 'phase 1 must keep the existing guard bound';
+          end $$;
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-phase1-check.sql
+
+      - name: CI-only service_role privileges (same as ci-full)
+        run: |
+          cat > /tmp/f05-grants.sql <<'SQL'
+          grant usage on schema public to service_role;
+          grant select, insert, update, delete on all tables in schema public to service_role;
+          grant usage, select on all sequences in schema public to service_role;
+          notify pgrst, 'reload schema';
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-grants.sql
+
+      - name: Prepare disposable local Vault entries (never printed)
+        run: |
+          secret=$(openssl rand -hex 32)
+          echo "::add-mask::$secret"
+          echo "F05_WEBHOOK_SECRET=$secret" >> "$GITHUB_ENV"
+          # Entrées Vault jetables du runner. Le ref "local-test" est refusé hors environnement local-test.
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v s="$secret" <<'SQL'
+          create extension if not exists pg_net;
+          create extension if not exists pg_cron;
+          select vault.create_secret(:'s', 'kaza_storage_validation_webhook_secret') is not null as secret_created;
+          select vault.create_secret('https://localtestrefaaaaaaaa.supabase.co/functions/v1/validate-file-upload',
+                                     'kaza_storage_validation_function_url') is not null as url_created;
+          select vault.create_secret('localtestrefaaaaaaaa', 'kaza_storage_validation_expected_project_ref') is not null as ref_created;
+          SQL
+
+      - name: Activation guards - wrong environment/ref must fail and install nothing
+        run: |
+          run_activation() {
+            docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -v target_env="$1" -v expected_ref="$2" < supabase/activation/f05_activate_storage_validation.sql
+          }
+          # Le ref de test ne doit jamais être accepté pour la production, ni l'inverse.
+          if run_activation production bzvlnefowgtuasqjfpem > /tmp/act1.log 2>&1; then echo "::error::activation accepted test ref for production"; exit 1; fi
+          grep -q "does not match target_env" /tmp/act1.log
+          if run_activation test qbogbuwnkwqgarbchtyr > /tmp/act2.log 2>&1; then echo "::error::activation accepted production ref for test"; exit 1; fi
+          # Bon ref d'environnement mais Vault local-test : doit échouer sur la divergence Vault.
+          if run_activation test bzvlnefowgtuasqjfpem > /tmp/act3.log 2>&1; then echo "::error::activation accepted mismatching Vault ref"; exit 1; fi
+          grep -qi "different project\|differs" /tmp/act3.log
+          # Rien n'a été installé par ces échecs.
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            assert (select tgfoid::regproc::text from pg_trigger
+                     where tgrelid = 'storage.objects'::regclass and tgname = 'guard_storage_upload')
+                   = 'public._guard_storage_upload', 'failed activation must leave the guard untouched';
+            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
+              'failed activation must not install the webhook';
+          end $$;
+          SQL
+
+      - name: Phase 2 - activate (local-test), post-checks, SQL assertions
+        run: |
+          activate() {
+            docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -v target_env=local-test -v expected_ref=localtestrefaaaaaaaa < supabase/activation/f05_activate_storage_validation.sql
+          }
+          activate
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/activation/f05_post_activation_checks.sql
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/activation/ci/retry_assertions.sql
+          # Idempotence et rollback : rollback puis réactivation.
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/activation/f05_rollback_storage_validation.sql
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            assert (select tgfoid::regproc::text from pg_trigger
+                     where tgrelid = 'storage.objects'::regclass and tgname = 'guard_storage_upload')
+                   = 'public._guard_storage_upload', 'rollback must restore the original guard';
+            assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
+              'rollback must remove the webhook trigger';
+          end $$;
+          SQL
+          activate
+          activate
+
+      - name: Serve Edge validator locally
+        run: |
+          umask 077
+          {
+            echo "SUPABASE_URL=$F05_API_URL"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$F05_SERVICE_KEY"
+            echo "STORAGE_VALIDATION_WEBHOOK_SECRET=$F05_WEBHOOK_SECRET"
+          } > /tmp/f05-edge.env
+          nohup supabase functions serve --env-file /tmp/f05-edge.env > /tmp/f05-edge.log 2>&1 &
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+              "$F05_API_URL/functions/v1/validate-file-upload" -H 'Content-Type: application/json' \
+              -H "apikey: $F05_ANON_KEY" -d '{}' || echo 000)
+            if [ "$code" = "401" ]; then echo "validate-file-upload ready (handler answers 401 without secret)"; exit 0; fi
+            sleep 3
+          done
+          echo "::error::Edge validator did not become ready (last HTTP $code)"
+          sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -40
+          exit 1
+
+      - name: F05 integration tests (RLS, states, Edge validator)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.F05_API_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.F05_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.F05_SERVICE_KEY }}
+          KAZA_F05_ACTIVATED: '1'
+          KAZA_F05_EDGE_URL: ${{ env.F05_API_URL }}/functions/v1/validate-file-upload
+          KAZA_F05_WEBHOOK_SECRET: ${{ env.F05_WEBHOOK_SECRET }}
+        run: |
+          mkdir -p reports
+          npx vitest run -c vitest.config.integration.ts \
+            tests/integration/security/storage-upload-validation.test.ts \
+            tests/integration/security/storage-validation-edge.test.ts \
+            --reporter=default --reporter=junit --outputFile.junit=reports/f05-integration-junit.xml
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## F05 targeted CI"
+            echo "- Branch: \`$GITHUB_REF_NAME\` at \`$GITHUB_SHA\`"
+            echo "- Local stack only: no remote Supabase project was contacted."
+            echo "- JUnit reports are attached as artifact \`f05-reports\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports and sanitized logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f05-reports
+          path: |
+            reports/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop local stack
+        if: always()
+        run: supabase stop --no-backup || true

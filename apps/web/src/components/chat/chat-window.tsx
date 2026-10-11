@@ -240,20 +240,69 @@ export function ChatWindow() {
   }
 
   async function uploadFiles(files: File[]): Promise<string[]> {
-    const urls: string[] = [];
-    for (const file of files) {
-      if (file.size > STORAGE_MAX) {
-        toast.error('Fichier trop volumineux (max 8 Mo)');
-        continue;
+    if (!user?.id) throw new Error('Connectez-vous pour envoyer des pieces jointes.');
+
+    const uploadedPaths: string[] = [];
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+
+    try {
+      for (const file of files) {
+        if (file.size < 12 || file.size > STORAGE_MAX) {
+          throw new Error(`${file.name} : taille non autorisee (12 octets a 8 Mo).`);
+        }
+
+        const contentType = file.type.toLowerCase().split(';', 1)[0]?.trim() ?? '';
+        if (!allowedMimeTypes.has(contentType)) {
+          throw new Error(`${file.name} : type de fichier non pris en charge.`);
+        }
+
+        const path = `${user.id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`;
+        const { error } = await supabase.storage.from('chat-files').upload(path, file, {
+          contentType,
+          upsert: false,
+        });
+        if (error) throw error;
+
+        uploadedPaths.push(path);
+        let validated = false;
+
+        // Signed URL creation is retried while the storage policy denies pending files.
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          const { data, error: signedError } = await supabase.storage
+            .from('chat-files')
+            .createSignedUrl(path, 3600);
+
+          if (!signedError && data?.signedUrl) {
+            validated = true;
+            break;
+          }
+
+          if (attempt < 29) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 500));
+          }
+        }
+
+        if (!validated) {
+          throw new Error(`${file.name} : validation non confirmee apres 15 secondes. Reessayez.`);
+        }
       }
-      const path = `${user?.id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`;
-      const { error } = await supabase.storage.from('chat-files').upload(path, file, {
-        contentType: file.type,
-      });
-      if (error) throw error;
-      urls.push(path);
+
+      return uploadedPaths;
+    } catch (error) {
+      // This function has not attempted the message insert, so these paths are not yet referenced by a message.
+      if (uploadedPaths.length > 0) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from('chat-files')
+            .remove(uploadedPaths);
+          if (cleanupError) console.error('[KAZA chat] upload cleanup failed', cleanupError);
+        } catch (cleanupError) {
+          console.error('[KAZA chat] upload cleanup threw', cleanupError);
+        }
+      }
+
+      throw error;
     }
-    return urls;
   }
 
   function formatVisitSlot(start: string, end: string): string {

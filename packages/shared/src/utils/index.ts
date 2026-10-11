@@ -3,3 +3,4 @@ export * from './date';
 export * from './validation';
 export * from './format';
 export * from './colors';
+export * from './image-format';

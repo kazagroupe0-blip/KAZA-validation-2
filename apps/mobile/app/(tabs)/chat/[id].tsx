@@ -8,11 +8,14 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
+import { Image } from 'expo-image';
 import { Send, Camera, Check, CheckCheck } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload, waitForValidatedSignedUrl } from '@/lib/storage-upload';
 import { useAuth } from '@/lib/auth-context';
 import type { Message } from '@kaza/shared';
 
@@ -20,6 +23,7 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [signedAttachments, setSignedAttachments] = useState<Record<string, string>>({});
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -61,6 +65,45 @@ export default function ChatScreen() {
   }, [id, user]);
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
+
+  // Resolve attachment paths only after Storage allows access.
+  useEffect(() => {
+    let cancelled = false;
+    const paths = Array.from(
+      new Set(messages.flatMap((message) => message.attachments ?? [])),
+    ).filter((path) => !signedAttachments[path]);
+
+    if (paths.length === 0) return;
+
+    void (async () => {
+      const resolved: Record<string, string> = {};
+
+      for (const path of paths) {
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const { data, error } = await supabase.storage
+            .from('chat-files')
+            .createSignedUrl(path, 3600);
+
+          if (!error && data?.signedUrl) {
+            resolved[path] = data.signedUrl;
+            break;
+          }
+
+          if (attempt < 11) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 500));
+          }
+        }
+      }
+
+      if (!cancelled && Object.keys(resolved).length > 0) {
+        setSignedAttachments((previous) => ({ ...previous, ...resolved }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, signedAttachments]);
 
   // Realtime subscription
   useEffect(() => {
@@ -110,29 +153,55 @@ export default function ChatScreen() {
     if (result.canceled || !result.assets[0] || !id || !user) return;
 
     const asset = result.assets[0];
-    const ext = asset.uri.split('.').pop() ?? 'jpg';
-    const path = `${user.id}/${Date.now()}.${ext}`;
-
+    let uploadedPath: string | null = null;
+    let insertAttempted = false;
     try {
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      const { error: uploadError } = await supabase.storage.from('chat-files').upload(path, blob);
-      if (uploadError) throw uploadError;
+      // Format réel détecté sur les octets : jamais l'extension ni blob.type.
+      const image = await prepareImageForUpload(asset.uri);
+      const path = `${user.id}/${Date.now()}.${image.extension}`;
 
-      const { data: urlData } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('chat-files')
-        .createSignedUrl(path, 3600);
-      const signedUrl = urlData?.signedUrl;
-      if (!signedUrl) throw new Error('URL signée indisponible');
+        .upload(path, image.bytes, { contentType: image.mime, upsert: false });
+      if (uploadError) throw uploadError;
+      uploadedPath = path;
 
-      await supabase.from('messages').insert({
+      const signedUrl = await waitForValidatedSignedUrl('chat-files', path);
+      if (!signedUrl) {
+        throw new Error(
+          "Le fichier n'a pas pu être validé à temps. Réessayez dans quelques instants.",
+        );
+      }
+
+      insertAttempted = true;
+      const { error: messageError } = await supabase.from('messages').insert({
         conversation_id: id,
         sender_id: user.id,
-        body: signedUrl,
+        body: null,
         kind: 'image',
+        attachments: [path],
       });
-    } catch {
-      // silent
+
+      if (messageError) throw messageError;
+      setSignedAttachments((previous) => ({ ...previous, [path]: signedUrl }));
+    } catch (error) {
+      // Do not delete if the database insert may have succeeded.
+      if (uploadedPath && !insertAttempted) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from('chat-files')
+            .remove([uploadedPath]);
+          if (cleanupError) console.error('[KAZA chat] cleanup failed', cleanupError);
+        } catch (cleanupError) {
+          console.error('[KAZA chat] cleanup threw', cleanupError);
+        }
+      }
+
+      console.error('[KAZA chat] image send failed', error);
+      Alert.alert(
+        'Envoi de la photo impossible',
+        error instanceof Error ? error.message : 'Une erreur inattendue est survenue.',
+      );
     }
   };
 
@@ -167,9 +236,40 @@ export default function ChatScreen() {
                   isMe(item) ? 'bg-kaza-vert rounded-br-sm' : 'bg-white border border-slate-200 rounded-bl-sm'
                 }`}
               >
-                <Text className={`text-sm ${isMe(item) ? 'text-white' : 'text-slate-900'}`}>
-                  {item.body}
-                </Text>
+                {(item.attachments ?? []).map((path: string) => {
+                  const url = signedAttachments[path];
+                  return url ? (
+                    <Image
+                      key={path}
+                      source={{ uri: url }}
+                      contentFit="cover"
+                      style={{ width: 220, height: 180, borderRadius: 12, marginBottom: 4 }}
+                      accessibilityLabel="Photo jointe au message"
+                    />
+                  ) : (
+                    <Text
+                      key={'pending-' + path}
+                      className={isMe(item) ? 'text-xs text-white' : 'text-xs text-slate-500'}
+                    >
+                      Photo en attente de validation ou indisponible.
+                    </Text>
+                  );
+                })}
+                {item.kind === 'image' &&
+                  (item.attachments ?? []).length === 0 &&
+                  item.body &&
+                  /^https?:\/\//i.test(item.body) ? (
+                    <Image
+                      source={{ uri: item.body }}
+                      contentFit="cover"
+                      style={{ width: 220, height: 180, borderRadius: 12 }}
+                      accessibilityLabel="Ancienne photo jointe au message"
+                    />
+                  ) : item.body ? (
+                    <Text className={`text-sm ${isMe(item) ? 'text-white' : 'text-slate-900'}`}>
+                      {item.body}
+                    </Text>
+                  ) : null}
               </View>
               <View className={`flex-row items-center mt-0.5 gap-1 ${isMe(item) ? 'self-end' : 'self-start'}`}>
                 <Text className="text-[10px] text-slate-400">

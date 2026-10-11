@@ -129,52 +129,108 @@ export function ResidenceForm({ existing }: Readonly<{ existing?: ResidenceWithR
   async function uploadPhotos(files: FileList | null) {
     if (!files || files.length === 0) return;
 
-    // Check total photo count limit
     const remainingSlots = MAX_PHOTOS - photos.length;
     if (remainingSlots <= 0) {
-      toast.error(`Maximum ${MAX_PHOTOS} photos autorisées`);
+      toast.error(`Maximum ${MAX_PHOTOS} photos autorisees`);
       return;
     }
 
     const validFiles = Array.from(files).slice(0, remainingSlots);
     if (validFiles.length !== files.length) {
-      toast.error(`Maximum ${MAX_PHOTOS} photos autorisées — ${files.length - validFiles.length} ignorée(s)`);
+      toast.error(`Maximum ${MAX_PHOTOS} photos autorisees - ${files.length - validFiles.length} ignoree(s)`);
     }
 
     setUploading(true);
-    const bucket = supabase.storage.from('residence-photos');
     const uploadedPaths: string[] = [];
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const ownerPrefix = user?.id ?? 'anonymous';
+    const validatedPathsInOrder: string[] = [];
+    const validatedPreviews: Record<string, string> = {};
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-    // Upload in parallel with concurrency limit of 4
-    const concurrency = 4;
-    for (let i = 0; i < validFiles.length; i += concurrency) {
-      const batch = validFiles.slice(i, i + concurrency);
-      await Promise.all(
-        batch.map(async (file) => {
-          if (file.size > MAX_FILE_SIZE) {
-            toast.error(`${file.name} dépasse 8 Mo`);
-            return;
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user?.id) {
+        throw new Error('Session utilisateur indisponible. Reconnectez-vous.');
+      }
+
+      const bucket = supabase.storage.from('residence-photos');
+      const concurrency = 4;
+
+      for (let i = 0; i < validFiles.length; i += concurrency) {
+        const batch = validFiles.slice(i, i + concurrency);
+        const results = await Promise.allSettled(
+          batch.map(async (file) => {
+            if (file.size < 12 || file.size > MAX_FILE_SIZE) {
+              throw new Error(`${file.name} : taille non autorisee (12 octets a 8 Mo).`);
+            }
+
+            const contentType = file.type.toLowerCase().split(';', 1)[0]?.trim() ?? '';
+            if (!allowedMimeTypes.has(contentType)) {
+              throw new Error(`${file.name} : format d'image non pris en charge.`);
+            }
+
+            const safeName = file.name.replace(/[^\w.-]/g, '_');
+            const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeName}`;
+            const { error } = await bucket.upload(path, file, {
+              contentType,
+              upsert: false,
+            });
+
+            if (error) {
+              throw new Error(`Echec de l'upload de ${file.name} : ${error.message}`);
+            }
+
+            // Track immediately so a later failure can clean this object's upload.
+            uploadedPaths.push(path);
+            let signedUrl: string | null = null;
+
+            for (let attempt = 0; attempt < 30; attempt += 1) {
+              signedUrl = await getSignedStorageUrl('residence-photos', path).catch(() => null);
+              if (signedUrl) break;
+              if (attempt < 29) {
+                await new Promise<void>((resolve) => setTimeout(resolve, 500));
+              }
+            }
+
+            if (!signedUrl) {
+              throw new Error(`${file.name} : validation non confirmee apres 15 secondes. Reessayez.`);
+            }
+
+            validatedPreviews[path] = signedUrl;
+            return path;
+          })
+        );
+
+        // Promise.allSettled ensures every upload in this batch has finished before cleanup.
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            const reason = result.reason;
+            throw reason instanceof Error ? reason : new Error("Echec de validation d\u0027une photo.");
           }
-          const path = `${ownerPrefix}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`;
-          const { error } = await bucket.upload(path, file, { contentType: file.type, upsert: false });
-          if (error) {
-            toast.error(`Échec de l'upload de ${file.name}`);
-            return;
+          validatedPathsInOrder.push(result.value);
+        }
+      }
+
+      // Keep the user's selection order for the cover photo.
+      setPhotoPreviewUrls((previous) => ({ ...previous, ...validatedPreviews }));
+      setPhotos((previous) => [...previous, ...validatedPathsInOrder]);
+    } catch (error) {
+      if (uploadedPaths.length > 0) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from('residence-photos')
+            .remove(Array.from(new Set(uploadedPaths)));
+          if (cleanupError) {
+            console.error('[KAZA residence] upload cleanup failed', cleanupError);
           }
-          uploadedPaths.push(path);
-          const signed = await getSignedStorageUrl('residence-photos', path);
-          if (signed) setPhotoPreviewUrls((prev) => ({ ...prev, [path]: signed }));
-        })
-      );
+        } catch (cleanupError) {
+          console.error('[KAZA residence] upload cleanup threw', cleanupError);
+        }
+      }
+
+      toast.error(error instanceof Error ? error.message : 'Upload des photos impossible.');
+    } finally {
+      setUploading(false);
     }
-    if (uploadedPaths.length > 0) {
-      setPhotos((prev) => [...prev, ...uploadedPaths]);
-    }
-    setUploading(false);
   }
 
   async function submit(e: React.FormEvent) {

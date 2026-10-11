@@ -72,8 +72,14 @@ verify_jwt = false
 [functions.push-emitter]
 verify_jwt = false
 
-[analytics]
-enabled = false
-
 [functions.landlord-payouts]
 verify_jwt = false
+
+[functions.validate-file-upload]
+verify_jwt = false
+
+[functions.validate-file-upload-v2]
+verify_jwt = false
+
+[analytics]
+enabled = false

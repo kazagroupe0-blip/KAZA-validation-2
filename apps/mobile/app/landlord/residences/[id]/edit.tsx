@@ -13,6 +13,7 @@ import { Image } from 'expo-image';
 import { Camera, Trash2, ChevronDown, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
+import { prepareImageForUpload, waitForValidatedSignedUrl } from '@/lib/storage-upload';
 import { useAuth } from '@/lib/auth-context';
 import type { Residence } from '@kaza/shared';
 import { resolveResidencePhotos } from '@/lib/residence-photos';
@@ -93,10 +94,24 @@ export default function EditResidenceScreen() {
         if (uri.startsWith('http')) {
           uploadedPhotos.push(uri);
         } else {
-          const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-          const response = await fetch(uri);
-          const blob = await response.blob();
-          await supabase.storage.from('residence-photos').upload(fileName, blob, { contentType: 'image/jpeg' });
+          // Format réel détecté sur les octets (pas de contentType codé en dur).
+          const image = await prepareImageForUpload(uri);
+          const fileName = `${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${image.extension}`;
+          const { error: uploadError } = await supabase.storage
+            .from('residence-photos')
+            .upload(fileName, image.bytes, { contentType: image.mime, upsert: false });
+
+          if (uploadError) {
+            throw new Error(`Échec du téléversement de la photo : ${uploadError.message}`);
+          }
+
+          // La photo n'est référencée par l'annonce qu'une fois la validation serveur confirmée.
+          const signedUrl = await waitForValidatedSignedUrl('residence-photos', fileName);
+          if (!signedUrl) {
+            await supabase.storage.from('residence-photos').remove([fileName]);
+            throw new Error("La photo n'a pas pu être validée. Réessayez avec un fichier JPEG, PNG ou WEBP.");
+          }
+
           uploadedPhotos.push(fileName);
         }
       }
