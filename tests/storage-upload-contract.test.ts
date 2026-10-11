@@ -563,7 +563,7 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
 
   it('pauses ONLY the two webhook triggers and always resumes them', () => {
     expect(wf).not.toMatch(/disable trigger (all|user)/i);
-    const disabled = [...wf.matchAll(/disable trigger "([^"]+)"/g)].map((m) => m[1]).sort();
+    const disabled = [...wf.matchAll(/disable trigger "([^"]+)"/gi)].map((m) => m[1]).sort();
     expect(disabled).toEqual(['kaza-storage-content-validation', 'kaza-storage-content-validation-update']);
     expect(wf).toContain('trap resume EXIT');
     expect(wf).toContain("tgenabled = 'D') = 2");
@@ -574,8 +574,8 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
   });
 
   it('runs the automatic-path tests with the webhook enabled and the direct tests with it paused', () => {
-    expect(wf).toContain('disable trigger "kaza-storage-content-validation"');
-    expect(wf).toContain('enable trigger "kaza-storage-content-validation"');
+    expect(wf).toMatch(/disable trigger "kaza-storage-content-validation"/i);
+    expect(wf).toMatch(/enable trigger "kaza-storage-content-validation"/i);
     expect(wf).toContain('storage-validation-automatic.test.ts');
     expect(wf).toContain('race_validated_vs_rejected.sh');
   });
