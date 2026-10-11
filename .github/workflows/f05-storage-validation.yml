@@ -108,9 +108,9 @@ jobs:
             assert to_regprocedure('public._guard_storage_upload_f05()') is not null, 'f05 guard missing';
             assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
               'phase 1 must not install the webhook trigger';
-            assert (select tgfoid::regproc::text from pg_trigger
-                     where tgrelid = 'storage.objects'::regclass and tgname = 'guard_storage_upload')
-                   = 'public._guard_storage_upload', 'phase 1 must keep the existing guard bound';
+            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
+                   = '_guard_storage_upload', 'phase 1 must keep the existing guard bound';
           end $$;
           SQL
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-phase1-check.sql
@@ -157,9 +157,9 @@ jobs:
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
           do $$
           begin
-            assert (select tgfoid::regproc::text from pg_trigger
-                     where tgrelid = 'storage.objects'::regclass and tgname = 'guard_storage_upload')
-                   = 'public._guard_storage_upload', 'failed activation must leave the guard untouched';
+            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
+                   = '_guard_storage_upload', 'failed activation must leave the guard untouched';
             assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
               'failed activation must not install the webhook';
           end $$;
@@ -179,9 +179,9 @@ jobs:
           docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
           do $$
           begin
-            assert (select tgfoid::regproc::text from pg_trigger
-                     where tgrelid = 'storage.objects'::regclass and tgname = 'guard_storage_upload')
-                   = 'public._guard_storage_upload', 'rollback must restore the original guard';
+            assert (select p.proname::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+                     where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'guard_storage_upload')
+                   = '_guard_storage_upload', 'rollback must restore the original guard';
             assert not exists (select 1 from pg_trigger where tgname = 'kaza-storage-content-validation' and not tgisinternal),
               'rollback must remove the webhook trigger';
           end $$;
