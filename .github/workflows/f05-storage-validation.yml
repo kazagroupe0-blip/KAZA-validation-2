@@ -209,6 +209,55 @@ jobs:
           sed -E 's/(eyJ[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]+)/[redacted]/g' /tmp/f05-edge.log | tail -40
           exit 1
 
+      - name: Install CI-only reset helper for integration tests
+        run: |
+          cat > /tmp/f05-reset-helper.sql <<'SQL'
+          create or replace function public.reset_test_database()
+          returns void
+          language plpgsql
+          security definer
+          set search_path = pg_catalog, public
+          as $
+          begin
+            if auth.role() <> 'service_role' then
+              raise exception 'Test-only helper';
+            end if;
+
+            delete from public.favorites where true;
+            delete from public.messages where true;
+            delete from public.receipts where true;
+            delete from public.payments where true;
+            delete from public.visits where true;
+            delete from public.conversations where true;
+            delete from public.leases where true;
+            delete from public.lease_invitations where true;
+            delete from public.notifications where true;
+            delete from public.landlord_payouts where true;
+            delete from public.admin_audit_logs where true;
+            delete from public.residences where true;
+          end;
+          $;
+
+          revoke all on function public.reset_test_database() from public, anon, authenticated;
+          grant execute on function public.reset_test_database() to service_role;
+
+          do $
+          begin
+            if to_regprocedure('public.reset_test_database()') is null then
+              raise exception 'CI reset helper was not created';
+            end if;
+            if has_function_privilege('anon', 'public.reset_test_database()', 'EXECUTE')
+               or has_function_privilege('authenticated', 'public.reset_test_database()', 'EXECUTE') then
+              raise exception 'CI reset helper is exposed to anon/authenticated';
+            end if;
+            if not has_function_privilege('service_role', 'public.reset_test_database()', 'EXECUTE') then
+              raise exception 'service_role cannot execute CI reset helper';
+            end if;
+          end;
+          $;
+          SQL
+          docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 < /tmp/f05-reset-helper.sql
+
       - name: F05 integration tests (RLS, states, Edge validator)
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.F05_API_URL }}
