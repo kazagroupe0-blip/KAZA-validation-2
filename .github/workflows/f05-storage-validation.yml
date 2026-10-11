@@ -404,11 +404,23 @@ jobs:
                       and tgenabled = 'O') = 3, 'guard, delete protection and maintenance triggers must stay enabled';
           end $$;
           SQL
+          run_assertion() {
+            local name="$1"
+            local sql_file="supabase/activation/ci/$name.sql"
+            if [ "$name" = "enqueue_failure_assertions" ]; then
+              # pg_net owns schema net through supabase_admin in this disposable CI database.
+              # Use that local role only to simulate enqueue failure; never connect to production here.
+              echo "Using supabase_admin for pg_net enqueue-failure fault injection (ephemeral CI database only)"
+              docker exec -i supabase_db_kaza psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < "$sql_file"
+            else
+              $db < "$sql_file"
+            fi
+          }
           for f in guard_assertions state_machine_assertions target_assertions retry_assertions idempotence_assertions enqueue_failure_assertions; do
             echo "== $f"
             # Une seule exécution par fichier. Pas de pipe vers tee : sans `pipefail` (shell par défaut
             # `bash -e`) un pipe masquerait le code de sortie de psql. Le log est conservé puis affiché.
-            if ! $db < "supabase/activation/ci/$f.sql" > "/tmp/ci-$f.log" 2>&1; then
+            if ! run_assertion "$f" > "/tmp/ci-$f.log" 2>&1; then
               cat "/tmp/ci-$f.log"
               echo "::error::SQL assertions failed in $f.sql"
               exit 1
@@ -420,7 +432,7 @@ jobs:
             echo "::warning::NOT EXECUTED - pg_net enqueue-failure assertions (CI role cannot rename schema net (requires schema ownership, role membership, or superuser privilege))"
             mkdir -p reports
             echo "pg_net enqueue-failure assertions (enqueue_failure_assertions.sql) were not executed: CI role cannot rename schema net (requires schema ownership, role membership, or superuser privilege)" >> reports/f05-not-executed.txt
-            echo "- **NOT EXECUTED**: pg_net enqueue-failure assertions (\`enqueue_failure_assertions.sql\`, schema \`net\` not owned by the CI role). This is not a pass." >> "$GITHUB_STEP_SUMMARY"
+            echo "- **NOT EXECUTED**: pg_net enqueue-failure assertions (\`enqueue_failure_assertions.sql\`) could not rename schema \`net\` with the selected CI database role. This is not a pass." >> "$GITHUB_STEP_SUMMARY"
           fi
           # Les scripts CI sont écrits sous Windows (core.autocrlf) : retirer d'éventuels CR avant de les exécuter sous Linux.
           sed -i 's/\r$//' supabase/activation/ci/*.sh
@@ -477,7 +489,9 @@ jobs:
           KAZA_F05_WEBHOOK_SECRET: ${{ env.F05_WEBHOOK_SECRET }}
         run: |
           mkdir -p reports
-          pg() { docker exec -i supabase_db_kaza psql -U postgres -d postgres -v ON_ERROR_STOP=1 "$@"; }
+          # This disposable CI database uses supabase_storage_admin as owner of storage.objects.
+          # Trigger toggles require the table owner; the postgres role failed that ownership check.
+          pg() { docker exec -i supabase_db_kaza psql -U supabase_storage_admin -d postgres -v ON_ERROR_STOP=1 "$@"; }
           # Réactivation garantie (succès, échec ou annulation du shell) ; SEULS les deux triggers du
           # webhook sont suspendus : garde F05, protect_objects_delete et triggers de maintenance restent actifs.
           resume() {
@@ -485,6 +499,14 @@ jobs:
                -c 'alter table storage.objects enable trigger "kaza-storage-content-validation-update"'
           }
           trap resume EXIT
+          pg <<'SQL'
+          do $
+          begin
+            assert current_user = 'supabase_storage_admin', 'trigger-toggle step must use supabase_storage_admin';
+            assert (select rolname from pg_roles where oid = (select relowner from pg_class where oid = 'storage.objects'::regclass)) = current_user,
+              'trigger-toggle role must own storage.objects';
+          end $;
+          SQL
           pg -c 'alter table storage.objects disable trigger "kaza-storage-content-validation"' \
              -c 'alter table storage.objects disable trigger "kaza-storage-content-validation-update"'
           pg <<'SQL'
