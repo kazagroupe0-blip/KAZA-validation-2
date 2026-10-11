@@ -3,10 +3,13 @@
 -- Script distinct, donc session distincte : le schéma net est renommé AVANT la première exécution
 -- du dispatch dans la session (un plan plpgsql déjà mis en cache résoudrait la fonction par OID et
 -- masquerait la panne). Tout est annulé en fin de script.
--- Renommer le schéma net exige d'en être propriétaire (ou membre du rôle propriétaire). Si ce n'est
+-- Renommer le schéma net exige d'en être propriétaire, d'être membre du rôle propriétaire, ou d'être superuser. Si ce n'est
 -- pas le cas sur la pile locale, le test n'est PAS exécuté et le dit explicitement (ligne
 -- ENQUEUE_FAILURE_TEST_SKIPPED relevée par la CI en avertissement) : jamais un faux succès.
-select coalesce(bool_or(pg_has_role(current_user, nspowner, 'member')), false) as can_rename
+select (
+    coalesce((select rolsuper from pg_roles where rolname = current_user), false)
+    or coalesce(bool_or(pg_has_role(current_user, nspowner, 'member')), false)
+  ) as can_rename
   from pg_namespace where nspname = 'net' \gset
 
 \if :can_rename

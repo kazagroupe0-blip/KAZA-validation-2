@@ -17,16 +17,16 @@ UID2="00000000-0000-4000-8000-0000000000a2"
 snapshot() {
   q <<'SQL'
 select md5(string_agg(x, E'\n' order by x)) from (
-  select 'trg:' || t.tgname || ':' || t.tgenabled || ':' || p.proname
+  select 'trg:' || t.tgname::text || ':' || t.tgenabled::text || ':' || p.proname::text
     from pg_trigger t join pg_proc p on p.oid = t.tgfoid
    where t.tgrelid = 'storage.objects'::regclass and not t.tgisinternal
   union all
-  select 'pol:' || policyname || ':' || cmd || ':' || coalesce(qual, '') || ':' || coalesce(with_check, '')
+  select 'pol:' || policyname::text || ':' || cmd::text || ':' || coalesce(qual, '')::text || ':' || coalesce(with_check, '')::text
     from pg_policies where schemaname = 'storage' and tablename = 'objects'
   union all
-  select 'cron:' || jobname || ':' || schedule || ':' || active from cron.job
+  select 'cron:' || jobname::text || ':' || schedule::text || ':' || active::text from cron.job
   union all
-  select 'reg:' || target_env || ':' || project_ref from private.f05_activation
+  select 'reg:' || target_env::text || ':' || project_ref::text from private.f05_activation
 ) s(x);
 SQL
 }
