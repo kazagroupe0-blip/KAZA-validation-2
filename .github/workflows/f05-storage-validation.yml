@@ -417,9 +417,9 @@ jobs:
           done
           # Un test non exécuté n'est jamais un succès : il est signalé en avertissement ET dans le résumé.
           if grep -qh ENQUEUE_FAILURE_TEST_SKIPPED /tmp/ci-*.log; then
-            echo "::warning::NOT EXECUTED - pg_net enqueue-failure assertions (schema net is not owned by the CI role)"
+            echo "::warning::NOT EXECUTED - pg_net enqueue-failure assertions (CI role cannot rename schema net (requires schema ownership, role membership, or superuser privilege))"
             mkdir -p reports
-            echo "pg_net enqueue-failure assertions (enqueue_failure_assertions.sql) were not executed: schema net is not owned by the CI role" >> reports/f05-not-executed.txt
+            echo "pg_net enqueue-failure assertions (enqueue_failure_assertions.sql) were not executed: CI role cannot rename schema net (requires schema ownership, role membership, or superuser privilege)" >> reports/f05-not-executed.txt
             echo "- **NOT EXECUTED**: pg_net enqueue-failure assertions (\`enqueue_failure_assertions.sql\`, schema \`net\` not owned by the CI role). This is not a pass." >> "$GITHUB_STEP_SUMMARY"
           fi
           # Les scripts CI sont écrits sous Windows (core.autocrlf) : retirer d'éventuels CR avant de les exécuter sous Linux.

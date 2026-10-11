@@ -410,6 +410,7 @@ describe('F05 rollback fail-closed static invariants (text checks, SQL is not ex
     ]) {
       expect(a).toContain(needle);
     }
+    expect(a).toContain("as _claims \\gset");
     const wf = readSql('../.github/workflows/f05-storage-validation.yml');
     for (const f of ['rollback_assertions.sh', 'race_dispatch_claim.sh', 'idempotence_assertions', 'enqueue_failure_assertions']) {
       expect(wf).toContain(f);
@@ -544,6 +545,8 @@ describe('F05 CI workflow static invariants (text checks, the workflow is not ex
     expect(skip).toContain('exit 1');
     const sqlFile = readSql('../supabase/activation/ci/enqueue_failure_assertions.sql');
     expect(sqlFile).toContain('ENQUEUE_FAILURE_TEST_SKIPPED');
+    expect(sqlFile).toContain("then 'true'");
+    expect(sqlFile).toContain("else 'false'");
   });
 
   it('fails the run (explicit gate) when a mandatory assertion was not executed', () => {

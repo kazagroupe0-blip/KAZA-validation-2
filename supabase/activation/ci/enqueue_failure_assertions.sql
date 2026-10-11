@@ -6,11 +6,13 @@
 -- Renommer le schéma net exige d'en être propriétaire, d'être membre du rôle propriétaire, ou d'être superuser. Si ce n'est
 -- pas le cas sur la pile locale, le test n'est PAS exécuté et le dit explicitement (ligne
 -- ENQUEUE_FAILURE_TEST_SKIPPED relevée par la CI en avertissement) : jamais un faux succès.
-select (
-    coalesce((select rolsuper from pg_roles where rolname = current_user), false)
-    or coalesce(bool_or(pg_has_role(current_user, nspowner, 'member')), false)
-  ) as can_rename
-  from pg_namespace where nspname = 'net' \gset
+select case
+  when coalesce((select rolsuper from pg_roles where rolname = current_user), false)
+    or coalesce((select pg_has_role(current_user, nspowner, 'member')
+                   from pg_namespace where nspname = 'net'), false)
+  then 'true'
+  else 'false'
+end as can_rename \gset
 
 \if :can_rename
 begin;

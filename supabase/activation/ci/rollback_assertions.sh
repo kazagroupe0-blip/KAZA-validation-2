@@ -36,7 +36,7 @@ rls_visible() {
   q -v uid="$1" <<'SQL'
 begin;
 set local role authenticated;
-select set_config('request.jwt.claims', json_build_object('sub', :'uid', 'role', 'authenticated')::text, true);
+select set_config('request.jwt.claims', json_build_object('sub', :'uid', 'role', 'authenticated')::text, true) as _claims \gset
 select count(*) from storage.objects where bucket_id = 'chat-files' and name like :'uid' || '/%';
 rollback;
 SQL
